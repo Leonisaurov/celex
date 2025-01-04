@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <unistd.h>
 
+#include "string.h"
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage:\n\t%s <sourceFiles.cle>\n", argv[0]);
