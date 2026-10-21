@@ -1054,6 +1054,9 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     append_text(status, sizeof(status), "  ");
     append_padded(status, sizeof(status), mode, 6);
     append_text(status, sizeof(status), "  ");
+    // Si se ven los valores o el fuente de las celdas.
+    append_padded(status, sizeof(status), manager->showValues ? "VAL" : "SRC", 3);
+    append_text(status, sizeof(status), "  ");
     append_padded(status, sizeof(status), content, 16);
     append_text(status, sizeof(status), "  ");
     append_text(status, sizeof(status), path == NULL ? "[no file]" : path);

@@ -245,8 +245,9 @@ B1 = A1
 is reported as `referencia circular entre celdas: A1, B1`, and the sheet is
 left as it was.
 
-The `v` key switches between the values and the source of the cells, and the
-status bar always shows the source of the selected cell.
+The `v` key switches between the values and the source of the cells. The
+status bar says which one the grid is showing, with `SRC` or `VAL`, and it
+always shows the source of the selected cell.
 
 The interpreter can also be used on its own, which is what the editor does
 under the hood:
