@@ -112,6 +112,8 @@ The runner is written in C, so the same tests run on both systems.
 | `v`                | show the values or the source of the cells|
 | `Ctrl+R`           | evaluate the sheet                        |
 | `Ctrl+S`           | save the sheet into the opened file       |
+| `Ctrl+Z`           | undo the last change                      |
+| `Ctrl+Y`           | redo the change that was undone           |
 | `q`                | quit                                      |
 
 ## The language

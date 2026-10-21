@@ -98,6 +98,125 @@ static void put_char(char *buffer, int width, int x, int y, const char *text, si
     cell[size] = '\0';
 }
 
+static char *duplicate_text(const char *text) {
+    if (text == NULL) {
+        text = "";
+    }
+
+    size_t length = strlen(text);
+    char *copy = (char *) malloc(length + 1);
+    if (copy == NULL) {
+        return NULL;
+    }
+
+    memcpy(copy, text, length + 1);
+
+    return copy;
+}
+
+static void history_push(History *history, unsigned int x, unsigned int y, const char *oldContent, const char *newContent) {
+    if (history->count == history->capacity) {
+        size_t capacity = history->capacity == 0 ? 8 : history->capacity * 2;
+        HistoryEntry *items = (HistoryEntry *) realloc(history->items, capacity * sizeof(HistoryEntry));
+        if (items == NULL) {
+            return;
+        }
+
+        history->items = items;
+        history->capacity = capacity;
+    }
+
+    HistoryEntry *entry = &history->items[history->count++];
+
+    entry->x = x;
+    entry->y = y;
+    entry->oldContent = duplicate_text(oldContent);
+    entry->newContent = duplicate_text(newContent);
+}
+
+static void history_clear(History *history) {
+    for (size_t i = 0; i < history->count; i++) {
+        free(history->items[i].oldContent);
+        free(history->items[i].newContent);
+    }
+
+    free(history->items);
+
+    history->items = NULL;
+    history->count = 0;
+    history->capacity = 0;
+}
+
+// El contenido que tiene ahora la celda.
+static const char *content_of(CellManager *manager, unsigned int x, unsigned int y) {
+    MetaCell *meta = get_cell(manager, x, y);
+
+    return cell_content(meta);
+}
+
+// Guarda el cambio de una celda. Los cambios seguidos de la misma celda se
+// juntan, para que escribir una palabra sea un solo paso de deshacer.
+static void record_change(CellManager *manager, unsigned int x, unsigned int y, const char *oldContent) {
+    // Un cambio nuevo descarta lo que se iba a rehacer.
+    history_clear(&manager->redo);
+
+    if (manager->undo.count > 0) {
+        HistoryEntry *last = &manager->undo.items[manager->undo.count - 1];
+
+        if (last->x == x && last->y == y) {
+            free(last->newContent);
+            last->newContent = duplicate_text(content_of(manager, x, y));
+
+            return;
+        }
+    }
+
+    history_push(&manager->undo, x, y, oldContent, content_of(manager, x, y));
+}
+
+void undo_edit(CellManager *manager) {
+    if (manager->undo.count == 0) {
+        return;
+    }
+
+    HistoryEntry *entry = &manager->undo.items[manager->undo.count - 1];
+    manager->undo.count--;
+
+    // Se vuelve al contenido anterior.
+    set_cell_content(manager, entry->x, entry->y, entry->oldContent);
+
+    // El cambio se puede rehacer.
+    history_push(&manager->redo, entry->x, entry->y, entry->oldContent, entry->newContent);
+
+    free(entry->oldContent);
+    free(entry->newContent);
+}
+
+void redo_edit(CellManager *manager) {
+    if (manager->redo.count == 0) {
+        return;
+    }
+
+    HistoryEntry *entry = &manager->redo.items[manager->redo.count - 1];
+    manager->redo.count--;
+
+    // Se vuelve al contenido nuevo.
+    set_cell_content(manager, entry->x, entry->y, entry->newContent);
+
+    history_push(&manager->undo, entry->x, entry->y, entry->oldContent, entry->newContent);
+
+    free(entry->oldContent);
+    free(entry->newContent);
+}
+
+bool can_undo(CellManager *manager) {
+    return manager->undo.count > 0;
+}
+
+bool can_redo(CellManager *manager) {
+    return manager->redo.count > 0;
+}
+
 CellManager new_cell_manager(TermSize size) {
     CellManager manager;
     manager.size = size;
@@ -111,6 +230,12 @@ CellManager new_cell_manager(TermSize size) {
     };
     manager.message[0] = '\0';
     manager.showValues = false;
+    manager.undo.items = NULL;
+    manager.undo.count = 0;
+    manager.undo.capacity = 0;
+    manager.redo.items = NULL;
+    manager.redo.count = 0;
+    manager.redo.capacity = 0;
 
     if (0 != hashmap_create(35, &manager.map)) {
         // TODO! Error Handeling
@@ -134,6 +259,9 @@ static int free_cell_entry(void *const context, struct hashmap_element_s *const 
 void free_cell_manager(CellManager *manager) {
     hashmap_iterate_pairs(&manager->map, free_cell_entry, NULL);
     hashmap_destroy(&manager->map);
+
+    history_clear(&manager->undo);
+    history_clear(&manager->redo);
 
     free_previous();
 }
@@ -223,7 +351,12 @@ void clear_cell(CellManager *manager, unsigned int x, unsigned int y) {
         return;
     }
 
+    char *old = duplicate_text(cell_content(meta));
+
     set_cell_text(meta, "");
+    record_change(manager, x, y, old);
+
+    free(old);
 }
 
 void append_cell_character(CellManager *manager, unsigned int x, unsigned int y, char character) {
@@ -234,7 +367,12 @@ void append_cell_character(CellManager *manager, unsigned int x, unsigned int y,
         meta = get_cell(manager, x, y);
     }
 
+    char *old = duplicate_text(cell_content(meta));
+
     append_cell_content(meta, character);
+    record_change(manager, x, y, old);
+
+    free(old);
 }
 
 void backspace_cell(CellManager *manager, unsigned int x, unsigned int y) {
@@ -244,7 +382,12 @@ void backspace_cell(CellManager *manager, unsigned int x, unsigned int y) {
         return;
     }
 
+    char *old = duplicate_text(cell_content(meta));
+
     backspace_cell_content(meta);
+    record_change(manager, x, y, old);
+
+    free(old);
 }
 
 void set_message(CellManager *manager, const char *message) {
@@ -672,8 +815,9 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     write_columns(status, width);
     printf("\x1b[0m");
 
-    if (extra[0] != '\0' && offset < width) {
-        // Se escribe con espacios al final para tapar lo que habia antes.
+    if (offset < width) {
+        // El valor o el mensaje van encima de la barra, y despues se ponen
+        // espacios para tapar lo que habia antes.
         int columns = utf8_columns(extra);
         int was = utf8_columns(previous_extra);
 

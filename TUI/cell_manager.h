@@ -7,6 +7,20 @@
 
 #define MESSAGE_SIZE 128
 
+// Un cambio en el contenido de una celda, para poder deshacerlo.
+typedef struct {
+    unsigned int x;
+    unsigned int y;
+    char* oldContent;
+    char* newContent;
+} HistoryEntry;
+
+typedef struct {
+    HistoryEntry* items;
+    size_t count;
+    size_t capacity;
+} History;
+
 typedef struct {
     struct hashmap_s map;
     TermSize size;
@@ -14,6 +28,8 @@ typedef struct {
     TermSize camera;
     bool showValues;
     char message[MESSAGE_SIZE];
+    History undo;
+    History redo;
 } CellManager;
 
 CellManager new_cell_manager(TermSize size);
@@ -31,5 +47,11 @@ void set_message(CellManager *manager, const char *message);
 
 void print_cell_manager(CellManager *manager);
 void print_status(CellManager *manager, const char *mode, const char *path);
+
+// Deshace el ultimo cambio y rehace el que se deshizo.
+void undo_edit(CellManager *manager);
+void redo_edit(CellManager *manager);
+bool can_undo(CellManager *manager);
+bool can_redo(CellManager *manager);
 
 #endif

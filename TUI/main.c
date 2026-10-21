@@ -13,6 +13,8 @@
 
 #define KEY_CTRL_S 19
 #define KEY_CTRL_R 18
+#define KEY_CTRL_Y 25
+#define KEY_CTRL_Z 26
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -58,9 +60,28 @@ int main(int argc, char **argv) {
             break;
         }
 
-        bool saved = false;
+        bool keepMessage = false;
 
-        if (editing) {
+        if (key == KEY_CTRL_Z || key == KEY_CTRL_Y) {
+            // Deshacer y rehacer funcionan tambien mientras se edita.
+            if (key == KEY_CTRL_Z) {
+                if (can_undo(&manager)) {
+                    undo_edit(&manager);
+                    set_message(&manager, "undone");
+                } else {
+                    set_message(&manager, "nothing to undo");
+                }
+            } else {
+                if (can_redo(&manager)) {
+                    redo_edit(&manager);
+                    set_message(&manager, "redone");
+                } else {
+                    set_message(&manager, "nothing to redo");
+                }
+            }
+
+            keepMessage = true;
+        } else if (editing) {
             switch (key) {
                 case KEY_ESC:
                     editing = false;
@@ -137,7 +158,7 @@ int main(int argc, char **argv) {
                         manager.showValues = true;
                     }
                     set_message(&manager, message);
-                    saved = true;
+                    keepMessage = true;
                     break;
                 }
                 case KEY_CTRL_S:
@@ -145,7 +166,7 @@ int main(int argc, char **argv) {
                         set_message(&manager, "no file to save");
                     } else if (save_file(path, &manager) == FILE_LOADED) {
                         set_message(&manager, "saved");
-                        saved = true;
+                        keepMessage = true;
                     } else {
                         set_message(&manager, "cannot write file");
                     }
@@ -160,7 +181,7 @@ int main(int argc, char **argv) {
             }
         }
 
-        if (!saved) {
+        if (!keepMessage) {
             set_message(&manager, "");
         }
     }
