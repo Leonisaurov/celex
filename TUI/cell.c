@@ -59,35 +59,6 @@ void write_cell_value(MetaCell *meta, const char *value) {
     replace_text(&meta->cell.value, value);
 }
 
-void append_cell_content(MetaCell *meta, char character) {
-    if (meta == NULL) {
-        return;
-    }
-
-    size_t length = meta->cell.content == NULL ? 0 : strlen(meta->cell.content);
-    char *buffer = (char *) realloc(meta->cell.content, length + 2);
-    if (buffer == NULL) {
-        return;
-    }
-
-    buffer[length] = character;
-    buffer[length + 1] = '\0';
-    meta->cell.content = buffer;
-}
-
-void backspace_cell_content(MetaCell *meta) {
-    if (meta == NULL || meta->cell.content == NULL) {
-        return;
-    }
-
-    size_t length = strlen(meta->cell.content);
-    if (length == 0) {
-        return;
-    }
-
-    meta->cell.content[length - 1] = '\0';
-}
-
 void insert_cell_text(MetaCell *meta, size_t offset, const char *text, size_t length) {
     if (meta == NULL || text == NULL || length == 0) {
         return;

@@ -51,7 +51,9 @@ if "%MODE%"=="debug" (
 
 if not exist build\obj mkdir build\obj
 
-set "CFLAGS=/nologo /std:c11 /W3 /D_CRT_SECURE_NO_WARNINGS /ICommon /ISheet /ILang %OPT%"
+rem /utf-8 porque los fuentes estan en UTF-8, con los acentos y los
+rem caracteres de la caja.
+set "CFLAGS=/nologo /std:c11 /W3 /utf-8 /D_CRT_SECURE_NO_WARNINGS /ICommon /ISheet /ILang %OPT%"
 
 rem El editor: TUI, la hoja y el lenguaje (sin el interprete).
 echo Compilando el editor...
@@ -93,8 +95,27 @@ for /l %%i in (1,1,4) do (
 goto :error
 :runner_listo
 
+rem Las pruebas de edicion: usan el gestor de celdas, pero no el programa.
+set "TUI_SOURCES="
+for %%f in (TUI\*.c) do (
+    if /i not "%%f"=="TUI\main.c" set "TUI_SOURCES=!TUI_SOURCES! %%f"
+)
+
+echo Compilando las pruebas de edicion...
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /ITUI /Fobuild\obj\ /Febuild\editor_test.exe tests\editor_test.c !TUI_SOURCES! Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c
+    if not errorlevel 1 goto :editor_listo
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:editor_listo
+
 echo Listo: build\celex.exe y build\celexs.exe
 build\runner.exe build\celexs.exe tests
+if errorlevel 1 goto :fallo
+
+build\editor_test.exe
 if errorlevel 1 goto :fallo
 
 popd

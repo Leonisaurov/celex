@@ -47,8 +47,6 @@ void set_cell_value(CellManager *manager, unsigned int x, unsigned int y, const 
 void clear_cell_values(CellManager *manager);
 void set_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *content);
 void clear_cell(CellManager *manager, unsigned int x, unsigned int y);
-void append_cell_character(CellManager *manager, unsigned int x, unsigned int y, char character);
-void backspace_cell(CellManager *manager, unsigned int x, unsigned int y);
 void set_message(CellManager *manager, const char *message);
 
 void print_cell_manager(CellManager *manager);

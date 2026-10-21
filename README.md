@@ -96,6 +96,12 @@ of cases is in `tests/cases.txt`.
 
 The runner is written in C, so the same tests run on both systems.
 
+There are two suites: `tests/runner.c` runs the interpreter over the cases
+of `tests/cases` and compares what it prints with `tests/expected`, and
+`tests/editor_test.c` checks the editing of the cells — writing in an empty
+cell, inserting in the middle, deleting, undoing — without needing a
+terminal.
+
 The language has some debug code that prints the symbols, the chunks and
 the tokens. It is not compiled in a normal build, and it is turned on
 with:

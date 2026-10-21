@@ -237,7 +237,14 @@ void edit_insert(CellManager *manager, const char *text, size_t length) {
     MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
 
     if (meta == NULL) {
-        return;
+        // La celda todavia no existe: se crea vacia para poder escribir en
+        // ella.
+        set_cell_content(manager, manager->cursor.x, manager->cursor.y, "");
+
+        meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+        if (meta == NULL) {
+            return;
+        }
     }
 
     char *old = duplicate_text(cell_content(meta));
@@ -397,18 +404,15 @@ void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y) {
 void edit_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *content) {
     MetaCell *meta = get_cell(manager, x, y);
 
-    if (meta == NULL) {
-        set_cell_content(manager, x, y, content);
-        meta = get_cell(manager, x, y);
-
-        if (meta == NULL) {
-            return;
-        }
-    }
-
+    // El contenido de antes, que es vacio si la celda no existe todavia.
     char *old = duplicate_text(cell_content(meta));
 
-    set_cell_text(meta, content);
+    if (meta == NULL) {
+        set_cell_content(manager, x, y, content);
+    } else {
+        set_cell_text(meta, content);
+    }
+
     record_change(manager, x, y, old);
 
     free(old);
@@ -559,37 +563,6 @@ void clear_cell(CellManager *manager, unsigned int x, unsigned int y) {
     char *old = duplicate_text(cell_content(meta));
 
     set_cell_text(meta, "");
-    record_change(manager, x, y, old);
-
-    free(old);
-}
-
-void append_cell_character(CellManager *manager, unsigned int x, unsigned int y, char character) {
-    MetaCell *meta = get_cell(manager, x, y);
-
-    if (meta == NULL) {
-        set_cell_content(manager, x, y, "");
-        meta = get_cell(manager, x, y);
-    }
-
-    char *old = duplicate_text(cell_content(meta));
-
-    append_cell_content(meta, character);
-    record_change(manager, x, y, old);
-
-    free(old);
-}
-
-void backspace_cell(CellManager *manager, unsigned int x, unsigned int y) {
-    MetaCell *meta = get_cell(manager, x, y);
-
-    if (meta == NULL) {
-        return;
-    }
-
-    char *old = duplicate_text(cell_content(meta));
-
-    backspace_cell_content(meta);
     record_change(manager, x, y, old);
 
     free(old);

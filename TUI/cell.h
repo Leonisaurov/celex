@@ -22,8 +22,6 @@ void free_cell(MetaCell *meta);
 
 void set_cell_text(MetaCell *meta, const char *content);
 void write_cell_value(MetaCell *meta, const char *value);
-void append_cell_content(MetaCell *meta, char character);
-void backspace_cell_content(MetaCell *meta);
 
 // Inserta texto en una posicion del contenido.
 void insert_cell_text(MetaCell *meta, size_t offset, const char *text, size_t length);

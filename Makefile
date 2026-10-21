@@ -25,6 +25,10 @@ INCLUDES = -I$(COMMON) -ISheet -ILang
 TUI = $(BUILD)/celex
 SCRIPT = $(BUILD)/celexs
 RUNNER = $(BUILD)/runner
+EDITOR_TEST = $(BUILD)/editor_test
+
+# Las pruebas de edicion usan el gestor de celdas, pero no el programa.
+EDITOR_SOURCES = $(filter-out TUI/main.c,$(TUI_SOURCES))
 
 .PHONY: all build tui script run run-script test clean
 
@@ -48,6 +52,10 @@ $(RUNNER): tests/runner.c
 	mkdir -p $(BUILD)
 	$(CC) tests/runner.c -o $@ $(CFLAGS) $(SANITIZE)
 
+$(EDITOR_TEST): tests/editor_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES)
+	mkdir -p $(BUILD)
+	$(CC) tests/editor_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES) -ITUI
+
 run: build
 	$(TUI) sample.cle
 
@@ -55,8 +63,9 @@ run-script: build
 	$(SCRIPT) sample.cle --values
 
 # Las pruebas del lenguaje y de la hoja.
-test: build $(RUNNER)
+test: build $(RUNNER) $(EDITOR_TEST)
 	$(RUNNER) $(SCRIPT) tests
+	$(EDITOR_TEST)
 
 clean:
 	rm -rf $(BUILD)
