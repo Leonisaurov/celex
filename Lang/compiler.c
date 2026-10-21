@@ -15,7 +15,7 @@ COMPILER_RESULT compile(const char* source, byte** out, uint64_t *len) {
 	initSymTable();
 
 	if (parse(source) != 0) {
-		printf("Error de sintaxis: %s\n", parseError());
+		// El error lo avisa quien llama, con parseError().
 		freeSymTable();
 		freeChunck();
 

@@ -396,135 +396,301 @@ static size_t* sort_assignments(Statement* assignments, size_t count, Strings* d
 	return order;
 }
 
+// Prepara las asignaciones de celda del fuente: las separa del resto del
+// programa y las deja en el orden en que se pueden calcular.
+//
+// Devuelve NULL si el fuente no se puede analizar, si no hay asignaciones de
+// celda o si las celdas se dependen entre si. En el ultimo caso, el ciclo
+// queda en cycle.
+static Statement* prepare_assignments(const char* source, size_t* count, bool* hasOther, Strings* cycle) {
+    Statements statements = {NULL, 0, 0};
+    Strings deps = {NULL, 0, 0};
+
+    *count = 0;
+    *hasOther = false;
+
+    if (!scan(source, &statements, &deps)) {
+        free_statements(&statements);
+        free_strings(&deps);
+
+        return NULL;
+    }
+
+    // Las asignaciones de celda, en su orden original.
+    size_t total = 0;
+    for (size_t i = 0; i < statements.count; i++) {
+        if (statements.items[i].ref != NULL) {
+            total++;
+        } else {
+            *hasOther = true;
+        }
+    }
+
+    if (total == 0) {
+        free_statements(&statements);
+        free_strings(&deps);
+
+        return NULL;
+    }
+
+    Statement* assignments = (Statement*) malloc(total * sizeof(Statement));
+    if (assignments == NULL) {
+        free_statements(&statements);
+        free_strings(&deps);
+
+        return NULL;
+    }
+
+    size_t slot = 0;
+    for (size_t i = 0; i < statements.count; i++) {
+        if (statements.items[i].ref != NULL) {
+            assignments[slot++] = statements.items[i];
+        }
+    }
+
+    size_t* order = sort_assignments(assignments, total, &deps, cycle);
+
+    // Las celdas que se dependen entre si no se pueden calcular.
+    if (cycle->count > 0) {
+        free(order);
+        free(assignments);
+        free_statements(&statements);
+        free_strings(&deps);
+
+        return NULL;
+    }
+
+    // Se dejan las asignaciones ya en su orden, con el texto copiado para
+    // que no dependa de la lista de sentencias.
+    Statement* sorted = (Statement*) malloc(total * sizeof(Statement));
+    if (sorted == NULL) {
+        free(order);
+        free(assignments);
+        free_statements(&statements);
+        free_strings(&deps);
+
+        return NULL;
+    }
+
+    for (size_t i = 0; i < total; i++) {
+        Statement* assignment = &assignments[order[i]];
+
+        sorted[i].text = duplicate(assignment->text, strlen(assignment->text));
+        sorted[i].ref = duplicate(assignment->ref, strlen(assignment->ref));
+        sorted[i].depsStart = 0;
+        sorted[i].depsCount = 0;
+    }
+
+    free(order);
+    free(assignments);
+    free_statements(&statements);
+    free_strings(&deps);
+
+    *count = total;
+
+    return sorted;
+}
+
+// Libera las asignaciones preparadas.
+static void free_sorted(Statement* sorted, size_t count) {
+    if (sorted == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        free(sorted[i].text);
+        free(sorted[i].ref);
+    }
+
+    free(sorted);
+}
+
+// El mensaje de las celdas que se dependen entre si.
+static void report_cycle(const Strings* cycle, char* error, size_t errorSize) {
+    if (error == NULL || errorSize == 0) {
+        return;
+    }
+
+    char cells[128];
+    size_t length = 0;
+    // Con muchas celdas en el ciclo solo se nombran algunas.
+    size_t shown = cycle->count < 4 ? cycle->count : 4;
+
+    cells[0] = '\0';
+
+    for (size_t i = 0; i < shown; i++) {
+        int written = snprintf(cells + length, sizeof(cells) - length, "%s%s", i > 0 ? ", " : "", cycle->items[i]);
+
+        if (written < 0 || (size_t) written >= sizeof(cells) - length) {
+            break;
+        }
+
+        length += (size_t) written;
+    }
+
+    if (cycle->count > shown) {
+        snprintf(cells + length, sizeof(cells) - length, " y %zu m\u00e1s", cycle->count - shown);
+    }
+
+    snprintf(error, errorSize, "referencia circular entre celdas: %s", cells);
+}
+
 char* order_source(const char* source, char* error, size_t errorSize) {
-	if (source == NULL) {
-		return NULL;
-	}
+    if (source == NULL) {
+        return NULL;
+    }
 
-	if (error != NULL && errorSize > 0) {
-		error[0] = '\0';
-	}
+    if (error != NULL && errorSize > 0) {
+        error[0] = '\0';
+    }
 
-	Statements statements = {NULL, 0, 0};
-	Strings deps = {NULL, 0, 0};
-	Strings cycle = {NULL, 0, 0};
+    Statements statements = {NULL, 0, 0};
+    Strings deps = {NULL, 0, 0};
+    Strings cycle = {NULL, 0, 0};
 
-	if (!scan(source, &statements, &deps)) {
-		free_statements(&statements);
-		free_strings(&deps);
-		free_strings(&cycle);
+    if (!scan(source, &statements, &deps)) {
+        free_statements(&statements);
+        free_strings(&deps);
+        free_strings(&cycle);
 
-		return NULL;
-	}
+        return NULL;
+    }
 
-	// Las asignaciones de celda, en su orden original.
-	size_t count = 0;
-	for (size_t i = 0; i < statements.count; i++) {
-		if (statements.items[i].ref != NULL) {
-			count++;
-		}
-	}
+    // Las asignaciones de celda, en su orden original.
+    size_t count = 0;
+    for (size_t i = 0; i < statements.count; i++) {
+        if (statements.items[i].ref != NULL) {
+            count++;
+        }
+    }
 
-	if (count == 0) {
-		free_statements(&statements);
-		free_strings(&deps);
-		free_strings(&cycle);
+    if (count == 0) {
+        free_statements(&statements);
+        free_strings(&deps);
+        free_strings(&cycle);
 
-		return NULL;
-	}
+        return NULL;
+    }
 
-	Statement* assignments = (Statement*) malloc(count * sizeof(Statement));
-	if (assignments == NULL) {
-		free_statements(&statements);
-		free_strings(&deps);
-		free_strings(&cycle);
+    Statement* assignments = (Statement*) malloc(count * sizeof(Statement));
+    if (assignments == NULL) {
+        free_statements(&statements);
+        free_strings(&deps);
+        free_strings(&cycle);
 
-		return NULL;
-	}
+        return NULL;
+    }
 
-	size_t slot = 0;
-	for (size_t i = 0; i < statements.count; i++) {
-		if (statements.items[i].ref != NULL) {
-			assignments[slot++] = statements.items[i];
-		}
-	}
+    size_t slot = 0;
+    for (size_t i = 0; i < statements.count; i++) {
+        if (statements.items[i].ref != NULL) {
+            assignments[slot++] = statements.items[i];
+        }
+    }
 
-	size_t* order = sort_assignments(assignments, count, &deps, &cycle);
+    size_t* order = sort_assignments(assignments, count, &deps, &cycle);
 
-	// Las celdas que se dependen entre si no se pueden calcular.
-	if (cycle.count > 0) {
-		if (error != NULL && errorSize > 0) {
-			char cells[128];
-			size_t length = 0;
-			// Con muchas celdas en el ciclo solo se nombran algunas.
-			size_t shown = cycle.count < 4 ? cycle.count : 4;
+    // Las celdas que se dependen entre si no se pueden calcular.
+    if (cycle.count > 0) {
+        report_cycle(&cycle, error, errorSize);
 
-			cells[0] = '\0';
+        free(order);
+        free(assignments);
+        free_statements(&statements);
+        free_strings(&deps);
+        free_strings(&cycle);
 
-			for (size_t i = 0; i < shown; i++) {
-				int written = snprintf(cells + length, sizeof(cells) - length, "%s%s", i > 0 ? ", " : "", cycle.items[i]);
+        return NULL;
+    }
 
-				if (written < 0 || (size_t) written >= sizeof(cells) - length) {
-					break;
-				}
+    // Se reconstruye el fuente con las asignaciones en su nuevo orden, en los
+    // mismos lugares que tenian.
+    size_t length = 1;
+    for (size_t i = 0; i < statements.count; i++) {
+        length += strlen(statements.items[i].text) + 2;
+    }
 
-				length += (size_t) written;
-			}
+    char* ordered = (char*) malloc(length);
+    if (ordered == NULL) {
+        free(order);
+        free(assignments);
+        free_statements(&statements);
+        free_strings(&deps);
+        free_strings(&cycle);
 
-			if (cycle.count > shown) {
-				snprintf(cells + length, sizeof(cells) - length, " y %zu m\u00e1s", cycle.count - shown);
-			}
+        return NULL;
+    }
 
-			snprintf(error, errorSize, "referencia circular entre celdas: %s", cells);
-		}
+    ordered[0] = '\0';
+    slot = 0;
 
-		free(order);
-		free(assignments);
-		free_statements(&statements);
-		free_strings(&deps);
-		free_strings(&cycle);
+    for (size_t i = 0; i < statements.count; i++) {
+        const char* text = statements.items[i].text;
 
-		return NULL;
-	}
+        if (statements.items[i].ref != NULL) {
+            text = assignments[order[slot]].text;
+            slot++;
+        }
 
-	// Se reconstruye el fuente con las asignaciones en su nuevo orden, en los
-	// mismos lugares que tenian.
-	size_t length = 1;
-	for (size_t i = 0; i < statements.count; i++) {
-		length += strlen(statements.items[i].text) + 2;
-	}
+        strcat(ordered, text);
+        strcat(ordered, "\n");
+    }
 
-	char* ordered = (char*) malloc(length);
-	if (ordered == NULL) {
-		free(order);
-		free(assignments);
-		free_statements(&statements);
-		free_strings(&deps);
-		free_strings(&cycle);
+    free(order);
+    free(assignments);
+    free_statements(&statements);
+    free_strings(&deps);
+    free_strings(&cycle);
 
-		return NULL;
-	}
+    return ordered;
+}
 
-	ordered[0] = '\0';
-	slot = 0;
+SheetAssignment* order_assignments(const char* source, size_t* count, bool* hasOther) {
+    if (source == NULL) {
+        return NULL;
+    }
 
-	for (size_t i = 0; i < statements.count; i++) {
-		const char* text = statements.items[i].text;
+    Strings cycle = {NULL, 0, 0};
 
-		if (statements.items[i].ref != NULL) {
-			text = assignments[order[slot]].text;
-			slot++;
-		}
+    size_t total = 0;
+    Statement* sorted = prepare_assignments(source, &total, hasOther, &cycle);
 
-		strcat(ordered, text);
-		strcat(ordered, "\n");
-	}
+    if (sorted == NULL) {
+        free_strings(&cycle);
 
-	free(order);
-	free(assignments);
-	free_statements(&statements);
-	free_strings(&deps);
-	free_strings(&cycle);
+        return NULL;
+    }
 
-	return ordered;
+    SheetAssignment* result = (SheetAssignment*) malloc(total * sizeof(SheetAssignment));
+    if (result == NULL) {
+        free_sorted(sorted, total);
+        free_strings(&cycle);
+
+        return NULL;
+    }
+
+    for (size_t i = 0; i < total; i++) {
+        result[i].ref = sorted[i].ref;
+        result[i].text = sorted[i].text;
+    }
+
+    free(sorted);
+    free_strings(&cycle);
+
+    *count = total;
+
+    return result;
+}
+
+void free_assignments(SheetAssignment* assignments, size_t count) {
+    if (assignments == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        free(assignments[i].ref);
+        free(assignments[i].text);
+    }
+
+    free(assignments);
 }

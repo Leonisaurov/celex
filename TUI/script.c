@@ -37,7 +37,9 @@ int run_script(CellManager *manager, char *message, size_t size) {
     SheetResult result;
     char error[MESSAGE_SIZE];
 
-    if (sheet_evaluate(source, &result, error, MESSAGE_SIZE) != 0) {
+    // Las celdas se evaluan de una en una: si una no se puede calcular, las
+    // demas siguen y solo se avisa de la que fallo.
+    if (sheet_evaluate_cells(source, &result, error, MESSAGE_SIZE) != 0) {
         snprintf(message, size, "%s", error);
         free(source);
         return SCRIPT_ERROR;
@@ -60,7 +62,11 @@ int run_script(CellManager *manager, char *message, size_t size) {
 
     sheet_result_free(&result);
 
-    snprintf(message, size, "script executed");
+    if (error[0] != '\0') {
+        snprintf(message, size, "%s", error);
+    } else {
+        snprintf(message, size, "script executed");
+    }
 
     return SCRIPT_OK;
 }

@@ -4,6 +4,7 @@
 //   tests/editor_test
 
 #include "cell_manager.h"
+#include "sheet.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -100,6 +101,31 @@ int main(void) {
     check_content(&manager, 3, 3, "", "deshacer un pegado");
 
     free_cell_manager(&manager);
+
+    // La hoja se evalua celda a celda: una celda que no se puede calcular no
+    // deja a las demas sin valor.
+    {
+        SheetResult result;
+        char error[512];
+
+        int status = sheet_evaluate_cells("A1 = 1\nA2 = 2\nB1 = A1 +\nA3 = A1 + A2\n", &result, error, sizeof(error));
+
+        check(status == 0, "una celda rota no hace fallar la hoja entera");
+        check(result.count == 3, "las celdas que si se pueden calcular tienen valor");
+        check(strstr(error, "B1") != NULL, "el error dice que celda fallo");
+
+        // Y los valores son los correctos.
+        bool found = false;
+        for (size_t i = 0; i < result.count; i++) {
+            if (strcmp(result.values[i].ref, "A3") == 0 && strcmp(result.values[i].value, "3") == 0) {
+                found = true;
+            }
+        }
+
+        check(found, "la celda que depende de otra tiene el valor correcto");
+
+        sheet_result_free(&result);
+    }
 
     if (failures == 0) {
         printf("  edicion: todo correcto\n");

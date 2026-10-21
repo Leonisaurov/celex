@@ -21,6 +21,7 @@ typedef struct {
 static Stack stack;
 static VMContext context;
 static FILE* output;
+static bool context_ready = false;
 
 static const char* symbols;
 static const char* instruccions;
@@ -209,10 +210,16 @@ static int freeItems(void *const context, void *const element) {
 }
 
 static void freeContext() {
+	if (!context_ready) {
+		return;
+	}
+
 	hashmap_iterate(&context.vars, freeItems, NULL);
 	hashmap_iterate(&context.cells, freeItems, NULL);
 	hashmap_destroy(&context.vars);
 	hashmap_destroy(&context.cells);
+
+	context_ready = false;
 }
 
 static Variable* getEntry(struct hashmap_s* table, const char* key, uint32_t length) {
@@ -318,7 +325,20 @@ static void printValue(Variable var) {
 	}
 }
 
+static VM_RESULT run(const char* source, bool keepCells);
+
 VM_RESULT execute(const char* source) {
+	return run(source, false);
+}
+
+// Ejecuta el programa conservando las celdas que ya tienen valor. Asi se
+// pueden calcular las celdas de una en una: cada celda ve el valor de las
+// que ya se calcularon.
+VM_RESULT executeKeepingCells(const char* source) {
+	return run(source, true);
+}
+
+static VM_RESULT run(const char* source, bool keepCells) {
 	initVM(source);
 	initStack();
 
@@ -326,8 +346,15 @@ VM_RESULT execute(const char* source) {
 		output = stdout;
 	}
 
-	hashmap_create(35, &context.vars);
-	hashmap_create(35, &context.cells);
+	if (!keepCells || !context_ready) {
+		// Las variables y las celdas empiezan de cero.
+		freeContext();
+
+		hashmap_create(35, &context.vars);
+		hashmap_create(35, &context.cells);
+
+		context_ready = true;
+	}
 
 	VM_RESULT result = VM_SUCCESS;
 
@@ -392,7 +419,7 @@ VM_RESULT execute(const char* source) {
 				bool error = false;
 				Variable value = arithmetic(code, left, right, &error);
 				if (error) {
-					printf("Error en la operacion\n");
+					fprintf(output, "Error en la operacion\n");
 					result = VM_ERR;
 					freeVariable(left);
 					freeVariable(right);
@@ -473,7 +500,7 @@ VM_RESULT execute(const char* source) {
 			case OP_HALT:
 				goto end;
 			default:
-				printf("Instruccion no handled\n");
+				fprintf(output, "Instruccion no handled\n");
 				result = VM_ERR;
 				goto end;
 		}

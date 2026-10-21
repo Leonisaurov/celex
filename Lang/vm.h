@@ -27,6 +27,10 @@ typedef enum {
 
 VM_RESULT execute(const char* source);
 
+// Como execute, pero conserva las celdas que ya tienen valor, para poder
+// calcular las celdas de una en una.
+VM_RESULT executeKeepingCells(const char* source);
+
 // Vuelca las celdas calculadas con el formato de celex: A1 = 42
 void printSheet();
 
