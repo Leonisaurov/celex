@@ -2,6 +2,12 @@ CC ?= gcc
 CFLAGS ?= -Wall -Wextra
 SANITIZE ?= -fsanitize=address
 
+# El codigo de depuracion del lenguaje se activa con DEBUG=1.
+DEBUG ?= 0
+ifeq ($(DEBUG),1)
+CFLAGS += -DCELEX_DEBUG
+endif
+
 BUILD = build
 COMMON = Common
 

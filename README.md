@@ -96,6 +96,15 @@ of cases is in `tests/cases.txt`.
 
 The runner is written in C, so the same tests run on both systems.
 
+The language has some debug code that prints the symbols, the chunks and
+the tokens. It is not compiled in a normal build, and it is turned on
+with:
+
+```sh
+make build DEBUG=1     # on POSIX
+build.bat debug        # on Windows
+```
+
 ## Keys
 
 | Key                | Action                                    |

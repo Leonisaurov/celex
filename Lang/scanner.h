@@ -5,10 +5,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#define true 1
-#define false 0
-
-//#define debug
+#include "debug.h"
 
 typedef enum {
   // Numero, String, Booleano, Indentificador

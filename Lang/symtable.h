@@ -1,9 +1,8 @@
 #ifndef CELEX_SCRIPT_SYMTABLE
 #define CELEX_SCRIPT_SYMTABLE
 #include <stdlib.h>
+#include "debug.h"
 #include "hashmap.h"
-
-#define debug
 
 typedef char byte;
 

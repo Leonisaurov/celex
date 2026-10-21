@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define debug
+#include "debug.h"
 
 typedef char byte;
 
