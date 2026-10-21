@@ -88,6 +88,47 @@ void backspace_cell_content(MetaCell *meta) {
     meta->cell.content[length - 1] = '\0';
 }
 
+void insert_cell_text(MetaCell *meta, size_t offset, const char *text, size_t length) {
+    if (meta == NULL || text == NULL || length == 0) {
+        return;
+    }
+
+    size_t current = meta->cell.content == NULL ? 0 : strlen(meta->cell.content);
+
+    if (offset > current) {
+        offset = current;
+    }
+
+    char *buffer = (char *) realloc(meta->cell.content, current + length + 1);
+    if (buffer == NULL) {
+        return;
+    }
+
+    memmove(buffer + offset + length, buffer + offset, current - offset);
+    memcpy(buffer + offset, text, length);
+    buffer[current + length] = '\0';
+
+    meta->cell.content = buffer;
+}
+
+void delete_cell_text(MetaCell *meta, size_t offset, size_t length) {
+    if (meta == NULL || meta->cell.content == NULL || length == 0) {
+        return;
+    }
+
+    size_t current = strlen(meta->cell.content);
+
+    if (offset >= current) {
+        return;
+    }
+
+    if (offset + length > current) {
+        length = current - offset;
+    }
+
+    memmove(meta->cell.content + offset, meta->cell.content + offset + length, current - offset - length + 1);
+}
+
 const char *cell_content(MetaCell *meta) {
     if (meta == NULL || meta->cell.content == NULL) {
         return "";

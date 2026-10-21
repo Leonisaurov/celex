@@ -115,9 +115,12 @@ build.bat debug        # on Windows
 | `j` `s` `↓`       | move the cursor down                      |
 | any printable key  | start editing the cell, replacing content |
 | `i` or `Enter`     | start editing the cell, keeping content   |
-| `Backspace`        | delete the last character of the cell     |
+| `←` `→`            | move the text cursor while editing        |
+| `Home` `End`       | move the text cursor to one end or other  |
+| `Backspace`        | delete the character before the cursor    |
+| `Del`              | delete the character at the cursor        |
 | `Esc`              | leave the cell                            |
-| `x` or `Del`       | clear the cell                            |
+| `x`                | clear the cell                            |
 | `v`                | show the values or the source of the cells|
 | `Ctrl+R`           | evaluate the sheet                        |
 | `Ctrl+S`           | save the sheet into the opened file       |
@@ -126,6 +129,11 @@ build.bat debug        # on Windows
 | `Ctrl+C`           | copy the content of the cell              |
 | `Ctrl+V`           | paste the content into the cell           |
 | `q`                | quit                                      |
+
+While a cell is being edited the arrows move the text cursor inside it,
+and the cell under the cursor is the one that shows where the text goes.
+If the content does not fit in the cell, the part that is shown is the one
+where the cursor is.
 
 The clipboard is the one of the editor, so it works the same on every
 system. If the sheet has changes that were not saved, `q` asks for a

@@ -29,6 +29,10 @@ typedef struct {
     bool showValues;
     // Si la hoja cambio desde la ultima vez que se guardo.
     bool dirty;
+    // Si se esta editando el contenido de una celda.
+    bool editing;
+    // Donde esta el cursor de texto dentro del contenido, en bytes.
+    size_t editOffset;
     char message[MESSAGE_SIZE];
     History undo;
     History redo;
@@ -64,5 +68,14 @@ void edit_cell_content(CellManager *manager, unsigned int x, unsigned int y, con
 void copy_cell_content(CellManager *manager, unsigned int x, unsigned int y);
 void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y);
 bool has_clipboard(void);
+
+// El cursor de texto, dentro del contenido de la celda que se edita.
+void edit_reset(CellManager *manager);
+void edit_move_cursor(CellManager *manager, int delta);
+void edit_to_start(CellManager *manager);
+void edit_to_end(CellManager *manager);
+void edit_insert(CellManager *manager, const char *text, size_t length);
+void edit_backspace(CellManager *manager);
+void edit_delete(CellManager *manager);
 
 #endif

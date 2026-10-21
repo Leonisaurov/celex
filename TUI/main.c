@@ -46,7 +46,6 @@ int main(int argc, char **argv) {
     open_screen();
 
     bool running = true;
-    bool editing = false;
     bool quitting = false;
 
     while (running) {
@@ -56,7 +55,7 @@ int main(int argc, char **argv) {
         }
 
         print_cell_manager(&manager);
-        print_status(&manager, editing ? "EDIT" : "NORMAL", path);
+        print_status(&manager, manager.editing ? "EDIT" : "NORMAL", path);
 
         int key = getkey();
         if (key < 0) {
@@ -102,37 +101,46 @@ int main(int argc, char **argv) {
             }
 
             keepMessage = true;
-        } else if (editing) {
+        } else if (manager.editing) {
             switch (key) {
                 case KEY_ESC:
-                    editing = false;
+                    manager.editing = false;
                     break;
                 case KEY_ENTER:
-                    editing = false;
+                    manager.editing = false;
                     if (manager.cursor.y < UINT16_MAX) manager.cursor.y++;
                     break;
                 case KEY_BACKSPACE:
-                    backspace_cell(&manager, manager.cursor.x, manager.cursor.y);
+                    edit_backspace(&manager);
+                    break;
+                case KEY_DELETE:
+                    edit_delete(&manager);
+                    break;
+                case KEY_HOME:
+                    edit_to_start(&manager);
+                    break;
+                case KEY_END:
+                    edit_to_end(&manager);
                     break;
                 case KEY_UP:
-                    editing = false;
+                    manager.editing = false;
                     if (manager.cursor.y > 0) manager.cursor.y--;
                     break;
                 case KEY_DOWN:
-                    editing = false;
+                    manager.editing = false;
                     if (manager.cursor.y < UINT16_MAX) manager.cursor.y++;
                     break;
                 case KEY_LEFT:
-                    editing = false;
-                    if (manager.cursor.x > 0) manager.cursor.x--;
+                    // Las flechas mueven el cursor de texto, no la celda.
+                    edit_move_cursor(&manager, -1);
                     break;
                 case KEY_RIGHT:
-                    editing = false;
-                    if (manager.cursor.x < UINT16_MAX) manager.cursor.x++;
+                    edit_move_cursor(&manager, 1);
                     break;
                 default:
                     if (key >= 32 && key < 127) {
-                        append_cell_character(&manager, manager.cursor.x, manager.cursor.y, (char) key);
+                        char character = (char) key;
+                        edit_insert(&manager, &character, 1);
                     }
                     break;
             }
@@ -185,7 +193,10 @@ int main(int argc, char **argv) {
                     break;
                 case 'i':
                 case KEY_ENTER:
-                    editing = true;
+                    // Se edita el contenido que ya tiene la celda, con el
+                    // cursor de texto al final.
+                    manager.editing = true;
+                    edit_reset(&manager);
                     break;
                 case 'x':
                 case KEY_DELETE:
@@ -217,9 +228,13 @@ int main(int argc, char **argv) {
                     break;
                 default:
                     if (key >= 32 && key < 127) {
-                        editing = true;
+                        // Una tecla cualquiera empieza a editar la celda, y
+                        // reemplaza su contenido.
+                        manager.editing = true;
                         clear_cell(&manager, manager.cursor.x, manager.cursor.y);
-                        append_cell_character(&manager, manager.cursor.x, manager.cursor.y, (char) key);
+
+                        char character = (char) key;
+                        edit_insert(&manager, &character, 1);
                     }
                     break;
             }

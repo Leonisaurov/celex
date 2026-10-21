@@ -154,6 +154,144 @@ static const char *content_of(CellManager *manager, unsigned int x, unsigned int
     return cell_content(meta);
 }
 
+// Guarda el cambio de una celda, para poder deshacerlo.
+static void record_change(CellManager *manager, unsigned int x, unsigned int y, const char *oldContent);
+
+// La posicion del caracter anterior, en bytes.
+static size_t previous_offset(const char *text, size_t offset) {
+    if (offset == 0) {
+        return 0;
+    }
+
+    size_t position = offset - 1;
+
+    // Los bytes de continuacion de un UTF-8 van hacia atras.
+    while (position > 0 && ((unsigned char) text[position] & 0xC0) == 0x80) {
+        position--;
+    }
+
+    return position;
+}
+
+// La posicion del caracter siguiente, en bytes.
+static size_t next_offset(const char *text, size_t offset) {
+    size_t length = strlen(text);
+
+    if (offset >= length) {
+        return length;
+    }
+
+    return offset + utf8_size(text + offset);
+}
+
+// El numero de caracteres del texto.
+static size_t char_count(const char *text) {
+    size_t count = 0;
+
+    for (size_t i = 0; text[i] != '\0'; i += utf8_size(text + i)) {
+        count++;
+    }
+
+    return count;
+}
+
+// El numero de caracteres que hay antes de una posicion, en bytes.
+static size_t char_index(const char *text, size_t offset) {
+    size_t count = 0;
+
+    for (size_t i = 0; i < offset && text[i] != '\0'; i += utf8_size(text + i)) {
+        count++;
+    }
+
+    return count;
+}
+
+void edit_reset(CellManager *manager) {
+    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+
+    manager->editOffset = strlen(cell_content(meta));
+}
+
+void edit_move_cursor(CellManager *manager, int delta) {
+    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    const char *content = cell_content(meta);
+
+    if (delta < 0) {
+        manager->editOffset = previous_offset(content, manager->editOffset);
+    } else {
+        manager->editOffset = next_offset(content, manager->editOffset);
+    }
+}
+
+void edit_to_start(CellManager *manager) {
+    manager->editOffset = 0;
+}
+
+void edit_to_end(CellManager *manager) {
+    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+
+    manager->editOffset = strlen(cell_content(meta));
+}
+
+void edit_insert(CellManager *manager, const char *text, size_t length) {
+    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+
+    if (meta == NULL) {
+        return;
+    }
+
+    char *old = duplicate_text(cell_content(meta));
+
+    insert_cell_text(meta, manager->editOffset, text, length);
+    manager->editOffset += length;
+
+    record_change(manager, manager->cursor.x, manager->cursor.y, old);
+
+    free(old);
+}
+
+void edit_backspace(CellManager *manager) {
+    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+
+    if (meta == NULL || manager->editOffset == 0) {
+        return;
+    }
+
+    size_t from = previous_offset(cell_content(meta), manager->editOffset);
+
+    char *old = duplicate_text(cell_content(meta));
+
+    delete_cell_text(meta, from, manager->editOffset - from);
+    manager->editOffset = from;
+
+    record_change(manager, manager->cursor.x, manager->cursor.y, old);
+
+    free(old);
+}
+
+void edit_delete(CellManager *manager) {
+    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+
+    if (meta == NULL) {
+        return;
+    }
+
+    const char *content = cell_content(meta);
+    size_t to = next_offset(content, manager->editOffset);
+
+    if (to == manager->editOffset) {
+        return;
+    }
+
+    char *old = duplicate_text(content);
+
+    delete_cell_text(meta, manager->editOffset, to - manager->editOffset);
+
+    record_change(manager, manager->cursor.x, manager->cursor.y, old);
+
+    free(old);
+}
+
 // Guarda el cambio de una celda. Los cambios seguidos de la misma celda se
 // juntan, para que escribir una palabra sea un solo paso de deshacer.
 static void record_change(CellManager *manager, unsigned int x, unsigned int y, const char *oldContent) {
@@ -187,6 +325,9 @@ void undo_edit(CellManager *manager) {
     // Se vuelve al contenido anterior.
     set_cell_content(manager, entry->x, entry->y, entry->oldContent);
 
+    // El cursor de texto se queda al final del contenido nuevo.
+    manager->editOffset = strlen(entry->oldContent);
+
     // El cambio se puede rehacer.
     history_push(&manager->redo, entry->x, entry->y, entry->oldContent, entry->newContent);
 
@@ -204,6 +345,9 @@ void redo_edit(CellManager *manager) {
 
     // Se vuelve al contenido nuevo.
     set_cell_content(manager, entry->x, entry->y, entry->newContent);
+
+    // El cursor de texto se queda al final del contenido nuevo.
+    manager->editOffset = strlen(entry->newContent);
 
     history_push(&manager->undo, entry->x, entry->y, entry->oldContent, entry->newContent);
 
@@ -284,6 +428,8 @@ CellManager new_cell_manager(TermSize size) {
     manager.message[0] = '\0';
     manager.showValues = false;
     manager.dirty = false;
+    manager.editing = false;
+    manager.editOffset = 0;
     manager.undo.items = NULL;
     manager.undo.count = 0;
     manager.undo.capacity = 0;
@@ -496,7 +642,9 @@ static void write_columns(const char *text, int columns) {
 }
 
 // Escribe las celdas de [from, to) de una fila, con el resaltado en su sitio.
-static void write_range(const char *cells, int from, int to, int highlight_start, int highlight_end) {
+// El hueco es la columna del cursor de texto, que se dibuja sin resaltar para
+// que se vea donde esta.
+static void write_range(const char *cells, int from, int to, int highlight_start, int highlight_end, int hole) {
     int cursor = from;
 
     // La parte que va antes del resaltado.
@@ -510,9 +658,19 @@ static void write_range(const char *cells, int from, int to, int highlight_start
         int start = highlight_start > cursor ? highlight_start : cursor;
         int end = highlight_end < to ? highlight_end : to;
 
-        printf("\x1b[7m");
-        write_cells(cells, start, end);
-        printf("\x1b[0m");
+        if (hole >= start && hole < end) {
+            printf("\x1b[7m");
+            write_cells(cells, start, hole);
+            printf("\x1b[0m");
+            write_cells(cells, hole, hole + 1);
+            printf("\x1b[7m");
+            write_cells(cells, hole + 1, end);
+            printf("\x1b[0m");
+        } else {
+            printf("\x1b[7m");
+            write_cells(cells, start, end);
+            printf("\x1b[0m");
+        }
 
         cursor = end;
     }
@@ -520,12 +678,12 @@ static void write_range(const char *cells, int from, int to, int highlight_start
     write_cells(cells, cursor, to);
 }
 
-static void print_row(int y, const char *cells, int from, int to, int highlight_start, int highlight_end) {
+static void print_row(int y, const char *cells, int from, int to, int highlight_start, int highlight_end, int hole) {
     // El cursor va a la primera columna que se escribe, no a la primera de
     // la fila.
     move_cursor((uint16_t) from, (uint16_t) y);
 
-    write_range(cells, from, to, highlight_start, highlight_end);
+    write_range(cells, from, to, highlight_start, highlight_end, hole);
 }
 
 // El ultimo fotograma, para redibujar solo lo que cambio.
@@ -534,6 +692,8 @@ static int previous_width = 0;
 static int previous_height = 0;
 static int previous_highlight_x = 0;
 static int previous_highlight_y = 0;
+static int previous_text_cursor_x = -1;
+static int previous_text_cursor_y = -1;
 static bool previous_ready = false;
 
 // La ultima barra de estado, para no redibujarla si no cambio.
@@ -664,6 +824,10 @@ void print_cell_manager(CellManager *manager) {
         }
     }
 
+    // Donde queda el cursor de texto, en coordenadas de la pantalla.
+    int text_cursor_x = -1;
+    int text_cursor_y = -1;
+
     for (int row = 0; row < rows; row++) {
         for (int column = 0; column < columns; column++) {
             unsigned int x = (unsigned int) (manager->camera.x + column);
@@ -685,15 +849,38 @@ void print_cell_manager(CellManager *manager) {
 
             int base_x = HEADER_WIDTH + column * STRIDE_X + 1;
             int base_y = HEADER_HEIGHT + row * STRIDE_Y + 1;
-            size_t length = strlen(content);
-            size_t offset = length > CELL_CAPACITY ? length - CELL_CAPACITY : 0;
+
+            bool is_cursor = manager->editing && x == manager->cursor.x && y == manager->cursor.y;
+
+            // Si el texto no cabe, se ve la parte donde esta el cursor.
+            size_t total = char_count(content);
+            size_t cursor_char = is_cursor ? char_index(content, manager->editOffset) : 0;
+
+            size_t start = 0;
+            if (total > CELL_CAPACITY) {
+                start = cursor_char >= CELL_CAPACITY ? cursor_char - CELL_CAPACITY + 1 : 0;
+
+                size_t max_start = total - CELL_CAPACITY;
+                if (start > max_start) start = max_start;
+            }
 
             // Cada caracter ocupa una celda, no un byte.
-            size_t index = offset;
+            size_t index = 0;
             int used = 0;
+            int skipped = 0;
 
-            while (content[index] != '\0' && used < CELL_CAPACITY) {
+            while (content[index] != '\0') {
                 size_t size = utf8_size(content + index);
+
+                if (skipped < (int) start) {
+                    skipped++;
+                    index += size;
+                    continue;
+                }
+
+                if (used >= CELL_CAPACITY) {
+                    break;
+                }
 
                 int px = base_x + (used % CELL_SIZE_X);
                 int py = base_y + (used / CELL_SIZE_X);
@@ -706,6 +893,16 @@ void print_cell_manager(CellManager *manager) {
 
                 index += size;
                 used++;
+            }
+
+            if (is_cursor) {
+                int position = (int) cursor_char - (int) start;
+
+                if (position < 0) position = 0;
+                if (position >= CELL_CAPACITY) position = CELL_CAPACITY - 1;
+
+                text_cursor_x = base_x + (position % CELL_SIZE_X);
+                text_cursor_y = base_y + (position / CELL_SIZE_X);
             }
         }
     }
@@ -769,8 +966,19 @@ void print_cell_manager(CellManager *manager) {
             if (to < end) to = end;
         }
 
+        // Si el cursor de texto se movio, las filas donde estaba y donde esta
+        // se redibujan enteras, para que no quede el hueco del cursor viejo.
+        if (text_cursor_x != previous_text_cursor_x || text_cursor_y != previous_text_cursor_y) {
+            if (y == text_cursor_y || y == previous_text_cursor_y) {
+                from = 0;
+                to = width;
+            }
+        }
+
+        int hole = (y == text_cursor_y) ? text_cursor_x : -1;
+
         if (to > from) {
-            print_row(y, row, from, to, start, end);
+            print_row(y, row, from, to, start, end, hole);
         }
     }
 
@@ -791,6 +999,8 @@ void print_cell_manager(CellManager *manager) {
 
     previous_highlight_x = highlight_x;
     previous_highlight_y = highlight_y;
+    previous_text_cursor_x = text_cursor_x;
+    previous_text_cursor_y = text_cursor_y;
     previous_ready = true;
 
     free(buffer);
