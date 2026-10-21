@@ -39,8 +39,8 @@ make build
 
 Two binaries are built:
 
-- `build/celex` â€” the editor.
-- `build/celexs` â€” the interpreter, to run a `.cle` file without the editor.
+- `build/celex` — the editor.
+- `build/celexs` — the interpreter, to run a `.cle` file without the editor.
 
 ```sh
 make run         # opens the editor with sample.cle
@@ -65,8 +65,8 @@ build.bat clean     :: removes the binaries
 
 It produces the same two binaries, with the `.exe` extension:
 
-- `build\celex.exe` â€” the editor.
-- `build\celexs.exe` â€” the interpreter.
+- `build\celex.exe` — the editor.
+- `build\celexs.exe` — the interpreter.
 
 ```bat
 build\celex.exe sample.cle
@@ -84,10 +84,10 @@ The `build` directory is shared by both systems, so `make clean` and
 
 | Key                | Action                                    |
 |--------------------|-------------------------------------------|
-| `h` `a` `â†`       | move the cursor left                      |
-| `l` `d` `â†’`       | move the cursor right                     |
-| `k` `w` `â†‘`       | move the cursor up                        |
-| `j` `s` `â†“`       | move the cursor down                      |
+| `h` `a` `←`       | move the cursor left                      |
+| `l` `d` `→`       | move the cursor right                     |
+| `k` `w` `↑`       | move the cursor up                        |
+| `j` `s` `↓`       | move the cursor down                      |
 | any printable key  | start editing the cell, replacing content |
 | `i` or `Enter`     | start editing the cell, keeping content   |
 | `Backspace`        | delete the last character of the cell     |
@@ -160,7 +160,10 @@ C1 = "hola"
   cell, so the file is valid Celex Script.
 - The right hand side is free form Celex Script; the editor stores it
   verbatim and never rewrites it.
-- Cells are written back sorted by row and then by column.
+- Cells are written back sorted by column and then by row. The language has
+  no forward references, so the order matters: a cell is written after the
+  cells it uses, and so it can be evaluated on its own.
+- The language has no comment syntax, so the editor never writes comments.
   Lines that are not cell assignments are ignored when loading and the
   status bar warns about them.
 
@@ -177,6 +180,31 @@ B1 = A1 + A2
 
 becomes `A1 = 1`, `A2 = 2`, `B1 = 3` in the grid.
 
+The language has no forward references: a cell can only use the value of the
+cells that were calculated before it. The module takes care of that before
+evaluating, and puts the cell assignments in the order they can be computed
+in, no matter how they were written:
+
+```
+A1 = B1 + 1
+B1 = 5
+```
+
+is evaluated as `B1 = 5` and then `A1 = B1 + 1`, so `A1` is `6`. Only the
+assignments of cells are reordered, and only when they need it: the rest of
+the program keeps its place.
+
+Cells that depend on each other in a cycle cannot be calculated:
+
+```
+A1 = B1
+B1 = A1
+```
+
+is reported as `referencia circular entre celdas: A1, B1`, and the sheet is
+left as it was.
+
+The `v` key switches between the values and the source of the cells, and the
 status bar always shows the source of the selected cell.
 
 The interpreter can also be used on its own, which is what the editor does

@@ -5,6 +5,7 @@
 
 #include "chunck.h"
 #include "compiler.h"
+#include "order.h"
 #include "parser.h"
 #include "symtable.h"
 #include "vm.h"
@@ -41,10 +42,23 @@ int sheet_evaluate(const char* source, SheetResult* result, char* error, size_t 
     char *program = NULL;
     uint64_t length = 0;
 
-    if (compile(source, (byte**) &program, &length) != COMPILER_RESULT_OK) {
+    // Las celdas se calculan en el orden en el que pueden depender unas de
+    // otras: el lenguaje no tiene referencias adelantadas.
+    char *ordered = order_source(source, error, errorSize);
+    if (ordered == NULL && error != NULL && error[0] != '\0') {
+        // Las celdas se dependen entre si: no se puede calcular la hoja.
+        return -1;
+    }
+
+    const char *sheet = ordered != NULL ? ordered : source;
+
+    if (compile(sheet, (byte**) &program, &length) != COMPILER_RESULT_OK) {
+        free(ordered);
         snprintf(error, errorSize, "%s", parseError());
         return -1;
     }
+
+    free(ordered);
 
     execute(program);
 

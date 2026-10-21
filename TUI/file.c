@@ -85,12 +85,16 @@ static int compare_entries(const void *a, const void *b) {
     const FileEntry *left = (const FileEntry *) a;
     const FileEntry *right = (const FileEntry *) b;
 
-    if (left->y != right->y) {
-        return left->y < right->y ? -1 : 1;
-    }
-
+    // Columna y luego fila: el lenguaje no tiene referencias adelantadas,
+    // asi que una celda tiene que venir despues de las celdas de las que
+    // depende. Con este orden, una celda ve a las que estan encima en su
+    // misma columna y a las de las columnas de la izquierda.
     if (left->x != right->x) {
         return left->x < right->x ? -1 : 1;
+    }
+
+    if (left->y != right->y) {
+        return left->y < right->y ? -1 : 1;
     }
 
     return 0;

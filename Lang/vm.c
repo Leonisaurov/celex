@@ -109,7 +109,7 @@ static void initStack() {
 static void bigStack() {
 	Variable* vars = (Variable*) realloc(stack.vars, sizeof(Variable) * stack.size * 3 / 2);
 	if (vars == NULL) {
-		printf("Error al hacer el Stack mÃ¡s grande\n");
+		printf("Error al hacer el Stack más grande\n");
 		return;
 	}
 
@@ -510,12 +510,14 @@ static int compareEntries(const void* a, const void* b) {
 	const SheetEntry* left = (const SheetEntry*) a;
 	const SheetEntry* right = (const SheetEntry*) b;
 
-	if (left->y != right->y) {
-		return left->y < right->y ? -1 : 1;
-	}
-
+	// El mismo orden que usa el editor al escribir la hoja: columna y luego
+	// fila.
 	if (left->x != right->x) {
 		return left->x < right->x ? -1 : 1;
+	}
+
+	if (left->y != right->y) {
+		return left->y < right->y ? -1 : 1;
 	}
 
 	return 0;
