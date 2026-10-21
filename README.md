@@ -236,6 +236,19 @@ B1 = A1 + A2
 
 becomes `A1 = 1`, `A2 = 2`, `B1 = 3` in the grid.
 
+The cells are evaluated one by one, in the order they can be calculated, and
+each one sees the value of the cells that were calculated before it. If one
+of them cannot be calculated, the others are anyway and the status bar
+says which one failed:
+
+```
+ B1: Se esperaba una expresion
+```
+
+The interpreter runs the whole file at once, because a file can also be a
+program with `print`, `for` or `if`. Both ways give the same values, since
+they use the same order.
+
 The language has no forward references: a cell can only use the value of the
 cells that were calculated before it. The module takes care of that before
 evaluating, and puts the cell assignments in the order they can be computed
