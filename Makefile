@@ -18,8 +18,9 @@ INCLUDES = -I$(COMMON) -ISheet -ILang
 
 TUI = $(BUILD)/celex
 SCRIPT = $(BUILD)/celexs
+RUNNER = $(BUILD)/runner
 
-.PHONY: all build tui script run run-script clean
+.PHONY: all build tui script run run-script test clean
 
 all: build
 
@@ -37,11 +38,19 @@ $(SCRIPT): $(SHEET_SOURCES) $(LANG_SOURCES) $(COMMON_SOURCES)
 	mkdir -p $(BUILD)
 	$(CC) $(SHEET_SOURCES) $(LANG_SOURCES) $(COMMON_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES)
 
+$(RUNNER): tests/runner.c
+	mkdir -p $(BUILD)
+	$(CC) tests/runner.c -o $@ $(CFLAGS) $(SANITIZE)
+
 run: build
 	$(TUI) sample.cle
 
 run-script: build
 	$(SCRIPT) sample.cle --values
+
+# Las pruebas del lenguaje y de la hoja.
+test: build $(RUNNER)
+	$(RUNNER) $(SCRIPT) tests
 
 clean:
 	rm -rf $(BUILD)

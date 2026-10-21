@@ -1,0 +1,4 @@
+# exit: 0
+A1 = texto
+B1 = true
+C1 = 12

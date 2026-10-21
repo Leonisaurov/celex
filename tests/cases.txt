@@ -1,0 +1,8 @@
+# Los casos que se corren con el interprete.
+hoja
+dependencias
+cadena
+programa
+circulo
+autorreferencia
+vacias

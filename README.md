@@ -80,6 +80,22 @@ colors and the alternate screen are lost, but the editor still works.
 The `build` directory is shared by both systems, so `make clean` and
 `build.bat clean` remove the binaries of the two of them.
 
+## Tests
+
+The cases of the language and of the sheet are in `tests`:
+
+```sh
+make test          # on POSIX
+build.bat test     # on Windows
+```
+
+Each case is a `.cle` file in `tests/cases` and what it should print in
+`tests/expected`. The first line of the expected file is the exit code the
+interpreter should return, and the rest is what it should print. The list
+of cases is in `tests/cases.txt`.
+
+The runner is written in C, so the same tests run on both systems.
+
 ## Keys
 
 | Key                | Action                                    |

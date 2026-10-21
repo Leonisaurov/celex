@@ -62,11 +62,33 @@ echo Compilando el interprete...
 cl %CFLAGS% /Fobuild\obj\ /Febuild\celexs.exe Sheet\*.c Lang\*.c Common\*.c
 if errorlevel 1 goto :error
 
+if /i "%MODE%"=="test" goto :test
+
 echo Listo: build\celex.exe y build\celexs.exe
 popd
 exit /b 0
 
+:test
+rem Las pruebas del lenguaje y de la hoja.
+echo Compilando el runner de pruebas...
+cl %CFLAGS% /Fobuild\obj\ /Febuild\runner.exe tests\runner.c
+if errorlevel 1 goto :error
+
+echo Listo: build\celex.exe y build\celexs.exe
+build\runner.exe build\celexs.exe tests
+if errorlevel 1 goto :fallo
+
+popd
+exit /b 0
+
+:fallo
+echo Fallaron las pruebas.
+popd
+exit /b 1
+
 :error
 echo Fallo la compilacion.
+echo Si el error es LNK1104 hay una copia del editor corriendo: cierrala y
+echo vuelve a intentarlo.
 popd
 exit /b 1
