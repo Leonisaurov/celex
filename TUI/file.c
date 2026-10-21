@@ -20,7 +20,13 @@ static char *trim(char *text) {
     return text;
 }
 
-int load_file(const char *path, CellManager *manager) {
+int load_file(const char *path, CellManager *manager, int *ignored) {
+    int skipped = 0;
+
+    if (ignored != NULL) {
+        *ignored = 0;
+    }
+
     FILE *file = fopen(path, "r");
     if (file == NULL) {
         return FILE_NOT_FOUND;
@@ -36,6 +42,7 @@ int load_file(const char *path, CellManager *manager) {
 
         char *separator = strchr(text, '=');
         if (separator == NULL) {
+            skipped++;
             continue;
         }
 
@@ -46,6 +53,7 @@ int load_file(const char *path, CellManager *manager) {
         unsigned int x = 0;
         unsigned int y = 0;
         if (!ref_parse(reference, &x, &y)) {
+            skipped++;
             continue;
         }
 
@@ -53,6 +61,10 @@ int load_file(const char *path, CellManager *manager) {
     }
 
     fclose(file);
+
+    if (ignored != NULL) {
+        *ignored = skipped;
+    }
 
     return FILE_LOADED;
 }
@@ -117,8 +129,6 @@ int save_file(const char *path, CellManager *manager) {
     hashmap_iterate_pairs(&manager->map, collect_entry, &entries);
 
     qsort(entries.items, entries.count, sizeof(FileEntry), compare_entries);
-
-    fprintf(file, "# celex script file\n");
 
     for (size_t i = 0; i < entries.count; i++) {
         char *reference = ref_to_string(entries.items[i].x, entries.items[i].y);

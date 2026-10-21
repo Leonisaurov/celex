@@ -6,7 +6,7 @@
 #define FILE_NOT_FOUND 0
 #define FILE_ERROR -1
 
-int load_file(const char *path, CellManager *manager);
+int load_file(const char *path, CellManager *manager, int *ignored);
 int save_file(const char *path, CellManager *manager);
 
 #endif
