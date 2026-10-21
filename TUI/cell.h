@@ -2,8 +2,10 @@
 #define CELEX_TUI_CELL
 
 #include "string.h"
+
 #define CELL_SIZE_X 4
 #define CELL_SIZE_Y 2
+#define CELL_CAPACITY (CELL_SIZE_X * CELL_SIZE_Y)
 
 typedef struct {
     string content;
@@ -16,5 +18,11 @@ typedef struct {
 } MetaCell;
 
 Cell new_cell();
+void free_cell(MetaCell *meta);
+
+void set_cell_text(MetaCell *meta, const char *content);
+void append_cell_content(MetaCell *meta, char character);
+void backspace_cell_content(MetaCell *meta);
+const char *cell_content(MetaCell *meta);
 
 #endif

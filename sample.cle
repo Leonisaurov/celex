@@ -1,0 +1,5 @@
+# celex script file
+A1 = 1
+A2 = 2
+B1 = sum(A1, A2)
+C1 = "hello"

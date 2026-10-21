@@ -1,9 +1,13 @@
 CC ?= clang
+CFLAGS ?= -Wall -Wextra
 
-build: *.c
-	${CC} *.c -o celex -fsanitize=address
+build: *.c *.h
+	${CC} *.c -o celex ${CFLAGS} -fsanitize=address
 
 run: build
-	./celex sample.cle
-clean: ./celex
-	rm celex
+	./celex ../sample.cle
+
+clean:
+	rm -f celex
+
+.PHONY: build run clean
