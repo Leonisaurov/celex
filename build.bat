@@ -3,6 +3,7 @@ rem Build nativo de Windows con MSVC (Visual Studio Build Tools).
 rem
 rem   build.bat            release
 rem   build.bat debug      con simbolos de depuracion
+rem   build.bat test      compila y corre las pruebas
 rem   build.bat clean      borra build\
 
 setlocal enabledelayedexpansion
@@ -43,7 +44,7 @@ if errorlevel 1 (
 )
 
 if "%MODE%"=="debug" (
-    set "OPT=/Od /Zi /D_DEBUG"
+    set "OPT=/Od /Zi /D_DEBUG /DCELEX_DEBUG"
 ) else (
     set "OPT=/O2 /DNDEBUG"
 )
@@ -54,13 +55,25 @@ set "CFLAGS=/nologo /std:c11 /W3 /D_CRT_SECURE_NO_WARNINGS /ICommon /ISheet /ILa
 
 rem El editor: TUI, la hoja y el lenguaje (sin el interprete).
 echo Compilando el editor...
-cl %CFLAGS% /Fobuild\obj\ /Febuild\celex.exe TUI\*.c Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c
-if errorlevel 1 goto :error
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /Fobuild\obj\ /Febuild\celex.exe TUI\*.c Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c
+    if not errorlevel 1 goto :editor_listo
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:editor_listo
 
 rem El interprete: la hoja, el lenguaje y los archivos comunes.
 echo Compilando el interprete...
-cl %CFLAGS% /Fobuild\obj\ /Febuild\celexs.exe Sheet\*.c Lang\*.c Common\*.c
-if errorlevel 1 goto :error
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /Fobuild\obj\ /Febuild\celexs.exe Sheet\*.c Lang\*.c Common\*.c
+    if not errorlevel 1 goto :interprete_listo
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:interprete_listo
 
 if /i "%MODE%"=="test" goto :test
 
@@ -71,8 +84,14 @@ exit /b 0
 :test
 rem Las pruebas del lenguaje y de la hoja.
 echo Compilando el runner de pruebas...
-cl %CFLAGS% /Fobuild\obj\ /Febuild\runner.exe tests\runner.c
-if errorlevel 1 goto :error
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /Fobuild\obj\ /Febuild\runner.exe tests\runner.c
+    if not errorlevel 1 goto :runner_listo
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:runner_listo
 
 echo Listo: build\celex.exe y build\celexs.exe
 build\runner.exe build\celexs.exe tests

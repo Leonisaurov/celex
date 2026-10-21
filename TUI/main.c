@@ -15,6 +15,8 @@
 #define KEY_CTRL_R 18
 #define KEY_CTRL_Y 25
 #define KEY_CTRL_Z 26
+#define KEY_CTRL_C 3
+#define KEY_CTRL_V 22
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -45,6 +47,7 @@ int main(int argc, char **argv) {
 
     bool running = true;
     bool editing = false;
+    bool quitting = false;
 
     while (running) {
         TermSize current = getTerminalSize();
@@ -58,6 +61,11 @@ int main(int argc, char **argv) {
         int key = getkey();
         if (key < 0) {
             break;
+        }
+
+        // Cualquier otra tecla cancela la confirmacion de salida.
+        if (key != 'q') {
+            quitting = false;
         }
 
         bool keepMessage = false;
@@ -78,6 +86,19 @@ int main(int argc, char **argv) {
                 } else {
                     set_message(&manager, "nothing to redo");
                 }
+            }
+
+            keepMessage = true;
+        } else if (key == KEY_CTRL_C) {
+            copy_cell_content(&manager, manager.cursor.x, manager.cursor.y);
+            set_message(&manager, "copied");
+            keepMessage = true;
+        } else if (key == KEY_CTRL_V) {
+            if (has_clipboard()) {
+                paste_cell_content(&manager, manager.cursor.x, manager.cursor.y);
+                set_message(&manager, "pasted");
+            } else {
+                set_message(&manager, "the clipboard is empty");
             }
 
             keepMessage = true;
@@ -118,7 +139,29 @@ int main(int argc, char **argv) {
         } else {
             switch (key) {
                 case 'q':
-                    running = false;
+                    // Si hay cambios sin guardar se pide confirmacion.
+                    if (manager.dirty && !quitting) {
+                        quitting = true;
+                        set_message(&manager, "unsaved changes: press q again to quit");
+                        keepMessage = true;
+                    } else {
+                        running = false;
+                    }
+                    break;
+                case KEY_CTRL_C:
+                    copy_cell_content(&manager, manager.cursor.x, manager.cursor.y);
+                    set_message(&manager, "copied");
+                    keepMessage = true;
+                    break;
+                case KEY_CTRL_V:
+                    if (has_clipboard()) {
+                        paste_cell_content(&manager, manager.cursor.x, manager.cursor.y);
+                        set_message(&manager, "pasted");
+                        keepMessage = true;
+                    } else {
+                        set_message(&manager, "the clipboard is empty");
+                        keepMessage = true;
+                    }
                     break;
                 case 'h':
                 case 'a':
@@ -166,6 +209,7 @@ int main(int argc, char **argv) {
                         set_message(&manager, "no file to save");
                     } else if (save_file(path, &manager) == FILE_LOADED) {
                         set_message(&manager, "saved");
+                        manager.dirty = false;
                         keepMessage = true;
                     } else {
                         set_message(&manager, "cannot write file");

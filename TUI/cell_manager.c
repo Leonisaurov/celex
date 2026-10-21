@@ -160,6 +160,8 @@ static void record_change(CellManager *manager, unsigned int x, unsigned int y, 
     // Un cambio nuevo descarta lo que se iba a rehacer.
     history_clear(&manager->redo);
 
+    manager->dirty = true;
+
     if (manager->undo.count > 0) {
         HistoryEntry *last = &manager->undo.items[manager->undo.count - 1];
 
@@ -217,6 +219,57 @@ bool can_redo(CellManager *manager) {
     return manager->redo.count > 0;
 }
 
+// El portapapeles del editor. Es propio, para que funcione igual en los dos
+// sistemas.
+static char* clipboard = NULL;
+
+static void clipboard_set(const char* text) {
+    char* copy = duplicate_text(text);
+
+    if (copy == NULL) {
+        return;
+    }
+
+    free(clipboard);
+    clipboard = copy;
+}
+
+void copy_cell_content(CellManager *manager, unsigned int x, unsigned int y) {
+    clipboard_set(content_of(manager, x, y));
+}
+
+bool has_clipboard(void) {
+    return clipboard != NULL;
+}
+
+void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y) {
+    if (clipboard == NULL) {
+        return;
+    }
+
+    edit_cell_content(manager, x, y, clipboard);
+}
+
+void edit_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *content) {
+    MetaCell *meta = get_cell(manager, x, y);
+
+    if (meta == NULL) {
+        set_cell_content(manager, x, y, content);
+        meta = get_cell(manager, x, y);
+
+        if (meta == NULL) {
+            return;
+        }
+    }
+
+    char *old = duplicate_text(cell_content(meta));
+
+    set_cell_text(meta, content);
+    record_change(manager, x, y, old);
+
+    free(old);
+}
+
 CellManager new_cell_manager(TermSize size) {
     CellManager manager;
     manager.size = size;
@@ -230,6 +283,7 @@ CellManager new_cell_manager(TermSize size) {
     };
     manager.message[0] = '\0';
     manager.showValues = false;
+    manager.dirty = false;
     manager.undo.items = NULL;
     manager.undo.count = 0;
     manager.undo.capacity = 0;
@@ -262,6 +316,11 @@ void free_cell_manager(CellManager *manager) {
 
     history_clear(&manager->undo);
     history_clear(&manager->redo);
+
+    if (clipboard != NULL) {
+        free(clipboard);
+        clipboard = NULL;
+    }
 
     free_previous();
 }

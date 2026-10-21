@@ -114,7 +114,13 @@ The runner is written in C, so the same tests run on both systems.
 | `Ctrl+S`           | save the sheet into the opened file       |
 | `Ctrl+Z`           | undo the last change                      |
 | `Ctrl+Y`           | redo the change that was undone           |
+| `Ctrl+C`           | copy the content of the cell              |
+| `Ctrl+V`           | paste the content into the cell           |
 | `q`                | quit                                      |
+
+The clipboard is the one of the editor, so it works the same on every
+system. If the sheet has changes that were not saved, `q` asks for a
+confirmation before leaving.
 
 ## The language
 

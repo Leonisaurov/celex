@@ -27,6 +27,8 @@ typedef struct {
     TermSize cursor;
     TermSize camera;
     bool showValues;
+    // Si la hoja cambio desde la ultima vez que se guardo.
+    bool dirty;
     char message[MESSAGE_SIZE];
     History undo;
     History redo;
@@ -53,5 +55,14 @@ void undo_edit(CellManager *manager);
 void redo_edit(CellManager *manager);
 bool can_undo(CellManager *manager);
 bool can_redo(CellManager *manager);
+
+// Cambia el contenido de una celda y lo deja en el historial.
+void edit_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *content);
+
+// Copia el contenido de una celda al portapapeles del editor, y pega el
+// contenido del portapapeles en una celda.
+void copy_cell_content(CellManager *manager, unsigned int x, unsigned int y);
+void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y);
+bool has_clipboard(void);
 
 #endif
