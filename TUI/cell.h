@@ -2,15 +2,13 @@
 #define CELEX_TUI_CELL
 #include <stddef.h>
 
-#include "string.h"
-
 #define CELL_SIZE_X 4
 #define CELL_SIZE_Y 2
 #define CELL_CAPACITY (CELL_SIZE_X * CELL_SIZE_Y)
 
 typedef struct {
-    string content;
-    string value;
+    char *content;
+    char *value;
 } Cell;
 
 typedef struct {

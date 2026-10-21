@@ -28,7 +28,7 @@ void free_cell(MetaCell *meta) {
     free(meta);
 }
 
-static void replace_text(string *target, const char *text) {
+static void replace_text(char **target, const char *text) {
     if (text == NULL) {
         text = "";
     }

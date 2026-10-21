@@ -9,8 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "entry.h"
-
 #define KEY_CTRL_S 19
 #define KEY_CTRL_R 18
 #define KEY_CTRL_Y 25
