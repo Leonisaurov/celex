@@ -52,6 +52,9 @@ void set_message(CellManager *manager, const char *message);
 void print_cell_manager(CellManager *manager);
 void print_status(CellManager *manager, const char *mode, const char *path);
 
+// Vacia la hoja entera y olvida los cambios deshechos.
+void clear_sheet(CellManager *manager);
+
 // Deshace el ultimo cambio y rehace el que se deshizo.
 void undo_edit(CellManager *manager);
 void redo_edit(CellManager *manager);

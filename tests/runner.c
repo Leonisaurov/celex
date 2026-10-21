@@ -60,6 +60,20 @@ static void trim_end(char* text) {
     }
 }
 
+// Quita los retornos de carro, para que los finales de linea del archivo
+// esperado no importen: en Windows son CRLF y en Linux LF.
+static void strip_cr(char* text) {
+    size_t length = 0;
+
+    for (size_t i = 0; text[i] != '\0'; i++) {
+        if (text[i] != '\r') {
+            text[length++] = text[i];
+        }
+    }
+
+    text[length] = '\0';
+}
+
 // Quita el fin de linea de un nombre, para que los archivos con CRLF tambien
 // sirvan.
 static void trim_line_end(char* text) {
@@ -146,6 +160,9 @@ static bool check_case(const char* interpreter, const char* directory, const cha
 
     trim_end(output);
     trim_end(content);
+
+    strip_cr(output);
+    strip_cr(content);
 
     bool same = strcmp(output, content) == 0;
     bool sameCode = code == wantedExit;

@@ -234,7 +234,12 @@ static void assignmentStatement() {
 		return;
 	}
 
-	expression();
+	// Una asignacion puede quedar sin valor: la celda queda vacia.
+	if (check(TOKEN_NEWLINE) || check(TOKEN_SEMI) || check(TOKEN_EOF)) {
+		addOpCode(OP_UPNIL);
+	} else {
+		expression();
+	}
 
 	emitSymbol(isCell ? OP_SETREF : OP_SETVAR, token);
 }

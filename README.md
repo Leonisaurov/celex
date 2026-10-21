@@ -134,6 +134,7 @@ build.bat debug        # on Windows
 | `Ctrl+Y`           | redo the change that was undone           |
 | `Ctrl+C`           | copy the content of the cell              |
 | `Ctrl+V`           | paste the content into the cell           |
+| `Ctrl+L`           | reload the file                           |
 | `q`                | quit                                      |
 
 While a cell is being edited the arrows move the text cursor inside it,
@@ -144,6 +145,11 @@ where the cursor is.
 The clipboard is the one of the editor, so it works the same on every
 system. If the sheet has changes that were not saved, `q` asks for a
 confirmation before leaving.
+
+The file is read when the editor starts. `Ctrl+L` reads it again, which is
+useful when it changes from the outside. If there are changes that were not
+saved, it asks for a confirmation first, because reloading throws them
+away.
 
 ## The language
 
@@ -207,6 +213,9 @@ C1 = "hola"
   cell, so the file is valid Celex Script.
 - The right hand side is free form Celex Script; the editor stores it
   verbatim and never rewrites it.
+- An assignment can be left without a value, `D1 =`, and then the cell is
+  empty. The editor does not write those cells when it saves: a cell with
+  no content does not need a line in the file.
 - Cells are written back sorted by column and then by row. The language has
   no forward references, so the order matters: a cell is written after the
   cells it uses, and so it can be evaluated on its own.

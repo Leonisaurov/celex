@@ -15,6 +15,7 @@
 #define KEY_CTRL_Z 26
 #define KEY_CTRL_C 3
 #define KEY_CTRL_V 22
+#define KEY_CTRL_L 12
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -45,6 +46,7 @@ int main(int argc, char **argv) {
 
     bool running = true;
     bool quitting = false;
+    bool reloading = false;
 
     while (running) {
         TermSize current = getTerminalSize();
@@ -65,6 +67,10 @@ int main(int argc, char **argv) {
             quitting = false;
         }
 
+        if (key != KEY_CTRL_L) {
+            reloading = false;
+        }
+
         bool keepMessage = false;
 
         if (key == KEY_CTRL_Z || key == KEY_CTRL_Y) {
@@ -83,6 +89,24 @@ int main(int argc, char **argv) {
                 } else {
                     set_message(&manager, "nothing to redo");
                 }
+            }
+
+            keepMessage = true;
+        } else if (key == KEY_CTRL_L) {
+            // Recargar el archivo, por si se cambio por fuera.
+            if (path == NULL) {
+                set_message(&manager, "no file to load");
+            } else if (manager.dirty && !reloading) {
+                reloading = true;
+                set_message(&manager, "unsaved changes: press Ctrl+L again to reload");
+            } else {
+                int ignored = 0;
+
+                clear_sheet(&manager);
+                load_file(path, &manager, &ignored);
+
+                reloading = false;
+                set_message(&manager, "reloaded");
             }
 
             keepMessage = true;

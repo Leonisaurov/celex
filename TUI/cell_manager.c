@@ -321,6 +321,28 @@ static void record_change(CellManager *manager, unsigned int x, unsigned int y, 
     history_push(&manager->undo, x, y, oldContent, content_of(manager, x, y));
 }
 
+static int clear_cell_content(void *const context, struct hashmap_element_s *const element) {
+    (void) context;
+
+    MetaCell *meta = (MetaCell *) element->data;
+
+    set_cell_text(meta, "");
+    write_cell_value(meta, "");
+
+    return 0;
+}
+
+void clear_sheet(CellManager *manager) {
+    hashmap_iterate_pairs(&manager->map, clear_cell_content, NULL);
+
+    history_clear(&manager->undo);
+    history_clear(&manager->redo);
+
+    manager->dirty = false;
+    manager->editing = false;
+    manager->editOffset = 0;
+}
+
 void undo_edit(CellManager *manager) {
     if (manager->undo.count == 0) {
         return;

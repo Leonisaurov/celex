@@ -131,6 +131,11 @@ char *sheet_source(CellManager *manager) {
 
     size_t length = 1;
     for (size_t i = 0; i < entries.count; i++) {
+        // Una celda sin contenido no necesita una linea en el archivo.
+        if (entries.items[i].content[0] == '\0') {
+            continue;
+        }
+
         length += strlen(entries.items[i].content) + 16;
     }
 
@@ -142,6 +147,10 @@ char *sheet_source(CellManager *manager) {
 
     source[0] = '\0';
     for (size_t i = 0; i < entries.count; i++) {
+        if (entries.items[i].content[0] == '\0') {
+            continue;
+        }
+
         char *reference = ref_to_string(entries.items[i].x, entries.items[i].y);
         strcat(source, reference);
         strcat(source, " = ");
