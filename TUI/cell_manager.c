@@ -10,11 +10,19 @@
 #include "cell.h"
 #include "ref.h"
 
+// El fotograma anterior, para redibujar solo lo que cambio.
+static void free_previous(void);
+
 #define HEADER_WIDTH 4
 #define HEADER_HEIGHT 1
 #define STRIDE_X (CELL_SIZE_X + 1)
 #define STRIDE_Y (CELL_SIZE_Y + 1)
 #define STATUS_HEIGHT 1
+
+// La pantalla se dibuja por columnas, no por bytes: un caracter de la caja
+// ocupa tres bytes en UTF-8 pero una sola columna. Cada celda del buffer
+// guarda un caracter completo.
+#define CELL_BYTES 4
 
 #define BOX_H "\xE2\x94\x80"
 #define BOX_V "\xE2\x94\x82"
@@ -28,12 +36,66 @@
 #define BOX_BD "\xE2\x94\xB4"
 #define BOX_CR "\xE2\x94\xBC"
 
+// Bytes del caracter UTF-8 que empieza en text.
+static size_t utf8_size(const char *text) {
+    unsigned char first = (unsigned char) text[0];
+
+    if (first < 0x80) return 1;
+    if ((first & 0xE0) == 0xC0) return 2;
+    if ((first & 0xF0) == 0xE0) return 3;
+    if ((first & 0xF8) == 0xF0) return 4;
+
+    return 1;
+}
+
+// Caracteres de un texto en UTF-8, que es lo que ocupa en la pantalla.
+static int utf8_columns(const char *text) {
+    int columns = 0;
+
+    for (size_t i = 0; text[i] != '\0'; i += utf8_size(text + i)) {
+        columns++;
+    }
+
+    return columns;
+}
+
+static char *cell_at(char *buffer, int width, int x, int y) {
+    return buffer + ((size_t) y * (size_t) width + (size_t) x) * CELL_BYTES;
+}
+
 static void put_box(char *buffer, int width, int x, int y, const char *glyph) {
-    if (x < 0 || x + 3 > width) {
+    if (x < 0 || x >= width) {
         return;
     }
 
-    memcpy(buffer + y * width + x, glyph, 3);
+    char *cell = cell_at(buffer, width, x, y);
+
+    // La celda se limpia entera, para que comparar dos fotogramas sea
+    // comparar los bytes de la celda.
+    memset(cell, 0, CELL_BYTES);
+
+    memcpy(cell, glyph, 3);
+    cell[3] = '\0';
+}
+
+static void put_char(char *buffer, int width, int x, int y, const char *text, size_t size) {
+    if (x < 0 || x >= width) {
+        return;
+    }
+
+    char *cell = cell_at(buffer, width, x, y);
+
+    memset(cell, 0, CELL_BYTES);
+
+    // Un caracter que no cabe en la celda se dibuja como interrogacion.
+    if (size >= CELL_BYTES) {
+        cell[0] = '?';
+        cell[1] = '\0';
+        return;
+    }
+
+    memcpy(cell, text, size);
+    cell[size] = '\0';
 }
 
 CellManager new_cell_manager(TermSize size) {
@@ -72,6 +134,8 @@ static int free_cell_entry(void *const context, struct hashmap_element_s *const 
 void free_cell_manager(CellManager *manager) {
     hashmap_iterate_pairs(&manager->map, free_cell_entry, NULL);
     hashmap_destroy(&manager->map);
+
+    free_previous();
 }
 
 static char *cell_key(unsigned int x, unsigned int y) {
@@ -193,13 +257,13 @@ void set_message(CellManager *manager, const char *message) {
 }
 
 static void update_camera(CellManager *manager, int columns, int rows) {
-    if ((int) manager->cursor.x < manager->camera.x) {
+    if ((int) manager->cursor.x < (int) manager->camera.x) {
         manager->camera.x = manager->cursor.x;
     }
     if ((int) manager->cursor.x >= (int) manager->camera.x + columns) {
         manager->camera.x = manager->cursor.x - columns + 1;
     }
-    if ((int) manager->cursor.y < manager->camera.y) {
+    if ((int) manager->cursor.y < (int) manager->camera.y) {
         manager->camera.y = manager->cursor.y;
     }
     if ((int) manager->cursor.y >= (int) manager->camera.y + rows) {
@@ -207,19 +271,105 @@ static void update_camera(CellManager *manager, int columns, int rows) {
     }
 }
 
-static void print_row(int y, const char *buffer, int length, int highlight_start, int highlight_end) {
-    move_cursor(0, (uint16_t) y);
+// Escribe las celdas de una fila, sin pasarse del ancho de la pantalla.
+static void write_cells(const char *cells, int from, int to) {
+    for (int x = from; x < to; x++) {
+        const char *cell = cells + (size_t) x * CELL_BYTES;
+        size_t length = strlen(cell);
 
-    if (highlight_start < 0) {
-        fwrite(buffer, 1, (size_t) length, stdout);
+        if (length > 0) {
+            fwrite(cell, 1, length, stdout);
+        }
+    }
+}
+
+// Escribe un texto, recortado a un numero de columnas.
+static void write_columns(const char *text, int columns) {
+    int used = 0;
+
+    for (size_t i = 0; text[i] != '\0' && used < columns; i += utf8_size(text + i)) {
+        fwrite(text + i, 1, utf8_size(text + i), stdout);
+        used++;
+    }
+}
+
+// Escribe las celdas de [from, to) de una fila, con el resaltado en su sitio.
+static void write_range(const char *cells, int from, int to, int highlight_start, int highlight_end) {
+    int cursor = from;
+
+    // La parte que va antes del resaltado.
+    if (highlight_start > cursor && highlight_start < to) {
+        write_cells(cells, cursor, highlight_start);
+        cursor = highlight_start;
+    }
+
+    // La parte resaltada.
+    if (highlight_end > cursor && highlight_start < to && highlight_end > from) {
+        int start = highlight_start > cursor ? highlight_start : cursor;
+        int end = highlight_end < to ? highlight_end : to;
+
+        printf("\x1b[7m");
+        write_cells(cells, start, end);
+        printf("\x1b[0m");
+
+        cursor = end;
+    }
+
+    write_cells(cells, cursor, to);
+}
+
+static void print_row(int y, const char *cells, int from, int to, int highlight_start, int highlight_end) {
+    // El cursor va a la primera columna que se escribe, no a la primera de
+    // la fila.
+    move_cursor((uint16_t) from, (uint16_t) y);
+
+    write_range(cells, from, to, highlight_start, highlight_end);
+}
+
+// El ultimo fotograma, para redibujar solo lo que cambio.
+static char *previous_buffer = NULL;
+static int previous_width = 0;
+static int previous_height = 0;
+static int previous_highlight_x = 0;
+static int previous_highlight_y = 0;
+static bool previous_ready = false;
+
+// La ultima barra de estado, para no redibujarla si no cambio.
+static char previous_status[MESSAGE_SIZE * 2];
+static char previous_extra[MESSAGE_SIZE * 2];
+static bool previous_status_ready = false;
+
+// El resaltado de una fila, o -1 si la fila no esta resaltada.
+static void row_highlight(int y, int highlight_x, int highlight_y, int width, int *start, int *end) {
+    *start = -1;
+    *end = -1;
+
+    if (y < highlight_y || y >= highlight_y + CELL_SIZE_Y) {
         return;
     }
 
-    fwrite(buffer, 1, (size_t) highlight_start, stdout);
-    printf("\x1b[7m");
-    fwrite(buffer + highlight_start, 1, (size_t) (highlight_end - highlight_start), stdout);
-    printf("\x1b[0m");
-    fwrite(buffer + highlight_end, 1, (size_t) (length - highlight_end), stdout);
+    int from = highlight_x;
+    int to = highlight_x + CELL_SIZE_X;
+
+    if (from < 0) from = 0;
+    if (to > width) to = width;
+    if (from > width) from = width;
+    if (to < from) to = from;
+
+    *start = from;
+    *end = to;
+}
+
+static void free_previous(void) {
+    if (previous_buffer == NULL) {
+        return;
+    }
+
+    free(previous_buffer);
+    previous_buffer = NULL;
+    previous_width = 0;
+    previous_height = 0;
+    previous_ready = false;
 }
 
 void print_cell_manager(CellManager *manager) {
@@ -235,11 +385,19 @@ void print_cell_manager(CellManager *manager) {
 
     update_camera(manager, columns, rows);
 
-    char *buffer = (char *) malloc((size_t) width * (size_t) height);
+    size_t cells_count = (size_t) width * (size_t) height;
+    char *buffer = (char *) malloc(cells_count * CELL_BYTES);
     if (buffer == NULL) {
         return;
     }
-    memset(buffer, ' ', (size_t) width * (size_t) height);
+
+    // Cada celda empieza con un espacio, para que la fila tenga el ancho
+    // de la pantalla.
+    for (size_t i = 0; i < cells_count; i++) {
+        char *cell = buffer + i * CELL_BYTES;
+        memset(cell, 0, CELL_BYTES);
+        cell[0] = ' ';
+    }
 
     for (int row = 0; row <= rows; row++) {
         int y = HEADER_HEIGHT + row * STRIDE_Y;
@@ -287,9 +445,7 @@ void print_cell_manager(CellManager *manager) {
 
         for (int i = 0; i < length; i++) {
             int x = HEADER_WIDTH + column * STRIDE_X + 1 + i;
-            if (x < width) {
-                buffer[x] = name[i];
-            }
+            put_char(buffer, width, x, HEADER_HEIGHT - 1, name + i, 1);
         }
         free(name);
     }
@@ -302,9 +458,7 @@ void print_cell_manager(CellManager *manager) {
         for (int i = 0; i < length; i++) {
             int x = HEADER_WIDTH - 1 - (length - 1 - i);
             int y = HEADER_HEIGHT + row * STRIDE_Y + 1;
-            if (x >= 0 && x < width && y < status_y) {
-                buffer[y * width + x] = label[i];
-            }
+            put_char(buffer, width, x, y, label + i, 1);
         }
     }
 
@@ -332,15 +486,24 @@ void print_cell_manager(CellManager *manager) {
             size_t length = strlen(content);
             size_t offset = length > CELL_CAPACITY ? length - CELL_CAPACITY : 0;
 
-            for (int i = 0; content[offset + i] != '\0'; i++) {
-                int px = base_x + (i % CELL_SIZE_X);
-                int py = base_y + (i / CELL_SIZE_X);
+            // Cada caracter ocupa una celda, no un byte.
+            size_t index = offset;
+            int used = 0;
 
-                if (px >= width || py >= status_y) {
-                    continue;
+            while (content[index] != '\0' && used < CELL_CAPACITY) {
+                size_t size = utf8_size(content + index);
+
+                int px = base_x + (used % CELL_SIZE_X);
+                int py = base_y + (used / CELL_SIZE_X);
+
+                if (py >= status_y) {
+                    break;
                 }
 
-                buffer[py * width + px] = content[offset + i];
+                put_char(buffer, width, px, py, content + index, size);
+
+                index += size;
+                used++;
             }
         }
     }
@@ -350,26 +513,115 @@ void print_cell_manager(CellManager *manager) {
     int highlight_x = HEADER_WIDTH + cursor_column * STRIDE_X + 1;
     int highlight_y = HEADER_HEIGHT + cursor_row * STRIDE_Y + 1;
 
-    clear_screen();
+    // Cuando cambia el tamano de la terminal hay que redibujar todo.
+    bool full = !previous_ready || previous_width != width || previous_height != height;
+
+    if (full) {
+        free_previous();
+        clear_screen();
+
+        // La pantalla se limpio entera, asi que la barra de estado tambien
+        // se tiene que redibujar.
+        previous_status_ready = false;
+    }
 
     for (int y = 0; y < status_y; y++) {
+        const char *row = buffer + (size_t) y * (size_t) width * CELL_BYTES;
+        const char *old_row = previous_ready ? previous_buffer + (size_t) y * (size_t) previous_width * CELL_BYTES : NULL;
+
         int start = -1;
         int end = -1;
+        row_highlight(y, highlight_x, highlight_y, width, &start, &end);
 
-        if (y >= highlight_y && y < highlight_y + CELL_SIZE_Y) {
-            start = highlight_x;
-            end = highlight_x + CELL_SIZE_X;
-            if (start < 0) start = 0;
-            if (end > width) end = width;
-            if (start > width) start = width;
-            if (end < start) end = start;
+        int old_start = -1;
+        int old_end = -1;
+        if (previous_ready) {
+            row_highlight(y, previous_highlight_x, previous_highlight_y, previous_width, &old_start, &old_end);
         }
 
-        print_row(y, buffer + y * width, width, start, end);
+        // Las columnas que cambian de contenido.
+        int from = 0;
+        int to = width;
+
+        if (!full && old_row != NULL) {
+            from = width;
+            to = 0;
+
+            for (int x = 0; x < width; x++) {
+                if (memcmp(row + (size_t) x * CELL_BYTES, old_row + (size_t) x * CELL_BYTES, CELL_BYTES) != 0) {
+                    if (x < from) from = x;
+                    if (x + 1 > to) to = x + 1;
+                }
+            }
+        }
+
+        // El resaltado viejo y el nuevo tienen que quedar tapados, porque el
+        // inverso de la terminal se queda pegado.
+        if (old_start >= 0) {
+            if (from > old_start) from = old_start;
+            if (to < old_end) to = old_end;
+        }
+
+        if (start >= 0) {
+            if (from > start) from = start;
+            if (to < end) to = end;
+        }
+
+        if (to > from) {
+            print_row(y, row, from, to, start, end);
+        }
     }
+
+    // Se guarda el fotograma para la proxima vez.
+    if (!previous_ready || previous_width != width || previous_height != height) {
+        previous_buffer = (char *) malloc(cells_count * CELL_BYTES);
+        if (previous_buffer == NULL) {
+            free(buffer);
+            flush();
+            return;
+        }
+
+        previous_width = width;
+        previous_height = height;
+    }
+
+    memcpy(previous_buffer, buffer, cells_count * CELL_BYTES);
+
+    previous_highlight_x = highlight_x;
+    previous_highlight_y = highlight_y;
+    previous_ready = true;
 
     free(buffer);
     flush();
+}
+
+static void append_text(char *status, size_t size, const char *text) {
+    size_t length = strlen(status);
+
+    if (length + 1 >= size) {
+        return;
+    }
+
+    snprintf(status + length, size - length, "%s", text);
+}
+
+// Agrega el texto y lo rellena con espacios hasta ocupar las columnas
+// pedidas.
+static void append_padded(char *status, size_t size, const char *text, int columns) {
+    append_text(status, size, text);
+
+    int used = utf8_columns(text);
+
+    for (int i = used; i < columns; i++) {
+        size_t length = strlen(status);
+
+        if (length + 1 >= size) {
+            break;
+        }
+
+        status[length] = ' ';
+        status[length + 1] = '\0';
+    }
 }
 
 void print_status(CellManager *manager, const char *mode, const char *path) {
@@ -383,29 +635,59 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     const char *value = cell_value(meta);
 
     char status[MESSAGE_SIZE * 2];
-    snprintf(status, sizeof(status), " %s  %-6s  %-16s  %s", ref, mode, content, path == NULL ? "[no file]" : path);
+    status[0] = '\0';
+
+    append_text(status, sizeof(status), " ");
+    append_text(status, sizeof(status), ref);
+    append_text(status, sizeof(status), "  ");
+    append_padded(status, sizeof(status), mode, 6);
+    append_text(status, sizeof(status), "  ");
+    append_padded(status, sizeof(status), content, 16);
+    append_text(status, sizeof(status), "  ");
+    append_text(status, sizeof(status), path == NULL ? "[no file]" : path);
+
     free(ref);
 
-    if (manager->showValues && value[0] != '\0') {
-        int offset = (int) strlen(status) + 1;
-        if (offset < width) {
-            move_cursor((uint16_t) offset, (uint16_t) y);
-            fwrite(value, 1, strlen(value) < (size_t) (width - offset) ? strlen(value) : (size_t) (width - offset), stdout);
-        }
+    // El valor o el mensaje van al final de la linea, encima de la barra.
+    char extra[MESSAGE_SIZE * 2];
+    extra[0] = '\0';
+
+    if (manager->message[0] != '\0') {
+        append_text(extra, sizeof(extra), manager->message);
+    } else if (manager->showValues && value[0] != '\0') {
+        append_text(extra, sizeof(extra), value);
     }
+
+    // Si la barra no cambio no se redibuja.
+    if (previous_status_ready &&
+        strcmp(status, previous_status) == 0 &&
+        strcmp(extra, previous_extra) == 0) {
+        return;
+    }
+
+    int offset = utf8_columns(status) + 1;
 
     move_cursor(0, (uint16_t) y);
     printf("\x1b[7m");
-    fwrite(status, 1, strlen(status) < (size_t) width ? strlen(status) : (size_t) width, stdout);
+    write_columns(status, width);
     printf("\x1b[0m");
 
-    if (manager->message[0] != '\0') {
-        int offset = (int) strlen(status) + 1;
-        if (offset < width) {
-            move_cursor((uint16_t) offset, (uint16_t) y);
-            fwrite(manager->message, 1, strlen(manager->message) < (size_t) (width - offset) ? strlen(manager->message) : (size_t) (width - offset), stdout);
+    if (extra[0] != '\0' && offset < width) {
+        // Se escribe con espacios al final para tapar lo que habia antes.
+        int columns = utf8_columns(extra);
+        int was = utf8_columns(previous_extra);
+
+        move_cursor((uint16_t) offset, (uint16_t) y);
+        write_columns(extra, width - offset);
+
+        for (int i = columns; i < was && offset + i < width; i++) {
+            fputc(' ', stdout);
         }
     }
+
+    snprintf(previous_status, sizeof(previous_status), "%s", status);
+    snprintf(previous_extra, sizeof(previous_extra), "%s", extra);
+    previous_status_ready = true;
 
     flush();
 }

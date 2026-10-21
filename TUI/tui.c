@@ -25,11 +25,15 @@ void open_screen() {
     platform_open_screen();
 
     printf("\x1b[?1049h");
+    // El cursor del hardware se esconde: la celda seleccionada ya dice donde
+    // esta el cursor, y si no parpadea en medio de la pantalla.
+    printf("\x1b[?25l");
     clear_screen();
     flush();
 }
 
 void close_screen() {
+    printf("\x1b[?25h");
     printf("\x1b[?1049l");
     flush();
 
