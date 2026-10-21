@@ -6,11 +6,15 @@ BUILD = build
 COMMON = Common
 
 TUI_SOURCES = $(wildcard TUI/*.c)
+SHEET_SOURCES = $(wildcard Sheet/*.c)
 LANG_SOURCES = $(wildcard Lang/*.c)
 COMMON_SOURCES = $(wildcard $(COMMON)/*.c)
-SHARED_SOURCES = $(filter-out $(COMMON)/fileread.c,$(COMMON_SOURCES)) $(filter-out Lang/cli.c,$(LANG_SOURCES))
 
-INCLUDES = -I$(COMMON) -ILang
+# La capa de modulo (Sheet) es la que habla con el lenguaje (Lang), y el
+# editor (TUI) solo habla con la capa de modulo.
+SHARED_SOURCES = $(filter-out $(COMMON)/fileread.c,$(COMMON_SOURCES)) $(filter-out Sheet/cli.c,$(SHEET_SOURCES)) $(LANG_SOURCES)
+
+INCLUDES = -I$(COMMON) -ISheet -ILang
 
 TUI = $(BUILD)/celex
 SCRIPT = $(BUILD)/celexs
@@ -29,9 +33,9 @@ $(TUI): $(TUI_SOURCES) $(SHARED_SOURCES)
 	mkdir -p $(BUILD)
 	$(CC) $(TUI_SOURCES) $(SHARED_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES)
 
-$(SCRIPT): $(LANG_SOURCES) $(COMMON_SOURCES)
+$(SCRIPT): $(SHEET_SOURCES) $(LANG_SOURCES) $(COMMON_SOURCES)
 	mkdir -p $(BUILD)
-	$(CC) $(LANG_SOURCES) $(COMMON_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES)
+	$(CC) $(SHEET_SOURCES) $(LANG_SOURCES) $(COMMON_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES)
 
 run: build
 	$(TUI) sample.cle

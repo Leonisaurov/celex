@@ -8,11 +8,28 @@ back the value of every cell.
 
 ## Layout
 
+The editor and the language are separate, and a module layer joins them:
+
 ```
 TUI/      the editor: grid, cells, keys and the .cle file
+Sheet/    the module: turns a sheet into a script and a script into values
 Lang/     the language: scanner, parser, compiler and virtual machine
 Common/   shared code: cell references and file helpers
 ```
+
+The dependencies only go one way:
+
+```
+TUI  ->  Sheet  ->  Lang  ->  Common
+```
+
+- `TUI/` knows nothing about the language. It builds the source of the sheet
+  and hands it to `Sheet/`.
+- `Sheet/sheet.h` is the whole interface between both: `sheet_evaluate()`
+  takes the source of a sheet and returns the value of every cell.
+- `Lang/` is the language itself, with no idea of a spreadsheet: it compiles
+  and runs a program and keeps the cells it is told to assign.
+- `Sheet/cli.c` is the standalone interpreter, built on the same module.
 
 ## Build
 
@@ -119,8 +136,8 @@ C1 = "hola"
 
 ## Evaluating the sheet
 
-`Ctrl+R` takes the sheet, compiles it with the language of `Lang/` and fills
-every cell with the value that it calculates:
+`Ctrl+R` takes the sheet, hands it to the module and fills every cell with
+the value that the language calculates:
 
 ```
 A1 = 1

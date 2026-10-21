@@ -1,6 +1,5 @@
-#include "compiler.h"
-#include "vm.h"
 #include "fileread.h"
+#include "sheet.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,35 +37,30 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
-	char *outcode;
-	uint64_t len;
+	SheetResult result;
+	char error[512];
 
 	if (values) {
 		// La salida del programa va a stderr para que stdout solo traiga las celdas.
-		setOutput(stderr);
+		sheet_set_output(stderr);
 	}
 
-	COMPILER_RESULT result = compile(file.label, &outcode, &len);
+	if (sheet_evaluate(file.label, &result, error, sizeof(error)) != 0) {
+		printf("%s\n", error);
+		freeStr(file);
+
+		return -1;
+	}
+
 	freeStr(file);
 
-	if (result == COMPILER_RESULT_ERR) {
-		return -1;
-	}
-
-	VM_RESULT vmResult = execute(outcode);
-
 	if (values) {
-		printSheet();
+		for (size_t i = 0; i < result.count; i++) {
+			printf("%s = %s\n", result.values[i].ref, result.values[i].value);
+		}
 	}
 
-	freeVM();
-	free(outcode);
-	freeSymTable();
-	freeChunck();
-
-	if (vmResult == VM_ERR) {
-		return -1;
-	}
+	sheet_result_free(&result);
 
 	return 0;
 }

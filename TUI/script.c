@@ -4,11 +4,9 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "compiler.h"
 #include "file.h"
-#include "parser.h"
 #include "ref.h"
-#include "vm.h"
+#include "sheet.h"
 
 int run_script(CellManager *manager, char *message, size_t size) {
     char *source = sheet_source(manager);
@@ -17,42 +15,37 @@ int run_script(CellManager *manager, char *message, size_t size) {
         return SCRIPT_ERROR;
     }
 
-    char *program = NULL;
-    uint64_t length = 0;
+    // La salida del programa no debe romper la pantalla del editor.
+    FILE *sink = fopen("/dev/null", "w");
+    if (sink != NULL) {
+        sheet_set_output(sink);
+    }
 
-    if (compile(source, (byte **) &program, &length) != COMPILER_RESULT_OK) {
-        snprintf(message, size, "%s", parseError());
+    SheetResult result;
+    char error[MESSAGE_SIZE];
+
+    if (sheet_evaluate(source, &result, error, MESSAGE_SIZE) != 0) {
+        snprintf(message, size, "%s", error);
         free(source);
         return SCRIPT_ERROR;
     }
 
     free(source);
 
-    execute(program);
-
-    CellValue *values = NULL;
-    size_t count = 0;
-    sheetValues(&values, &count);
-
     clear_cell_values(manager);
 
-    for (size_t i = 0; i < count; i++) {
+    for (size_t i = 0; i < result.count; i++) {
         unsigned int x = 0;
         unsigned int y = 0;
 
-        if (!ref_parse(values[i].ref, &x, &y)) {
+        if (!ref_parse(result.values[i].ref, &x, &y)) {
             continue;
         }
 
-        set_cell_value(manager, x, y, values[i].value);
+        set_cell_value(manager, x, y, result.values[i].value);
     }
 
-    freeCellValues(values, count);
-
-    freeVM();
-    free(program);
-    freeSymTable();
-    freeChunck();
+    sheet_result_free(&result);
 
     snprintf(message, size, "script executed");
 
