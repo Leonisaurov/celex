@@ -6,7 +6,8 @@ scripting language (`.cle` files).
 The TUI in `TUI/` is the editor: it renders the sheet, lets you write the
 source of every cell and stores that source back into a `.cle` file. The
 `Celex-Script` repository holds the language implementation (scanner,
-compiler and VM) that consumes those files.
+compiler and VM) that evaluates those files and gives back the value of
+every cell.
 
 ## Build
 
@@ -30,8 +31,35 @@ make run          # opens sample.cle
 | `Backspace`        | delete the last character of the cell     |
 | `Esc`              | leave the cell                            |
 | `x` or `Del`       | clear the cell                            |
+| `v`                | show the values or the source of the cells|
+| `Ctrl+R`           | run the sheet with celex-script           |
 | `Ctrl+S`           | save the sheet into the opened file       |
 | `q`                | quit                                      |
+
+## Running the sheet
+
+`Ctrl+R` writes the sheet to a temporary script, runs it with the
+interpreter of
+[Celex-Script](https://github.com/Leonisaurov/Celex-Script) and fills every
+cell with the value that the language calculates:
+
+```
+A1 = 1
+A2 = 2
+B1 = A1 + A2
+```
+
+becomes `A1 = 1`, `A2 = 2`, `B1 = 3` in the grid.
+
+The interpreter is looked up in the `CELEXS` environment variable, and
+`celexs` in the `PATH` is used when it is not set:
+
+```sh
+CELEXS=../Celex-Script/build/celexs ./celex sheet.cle
+```
+
+The `v` key switches between the values and the source of the cells, and the
+status bar always shows the source of the selected cell.
 
 ## File format
 

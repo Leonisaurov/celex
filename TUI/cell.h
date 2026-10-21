@@ -9,6 +9,7 @@
 
 typedef struct {
     string content;
+    string value;
 } Cell;
 
 typedef struct {
@@ -21,8 +22,10 @@ Cell new_cell();
 void free_cell(MetaCell *meta);
 
 void set_cell_text(MetaCell *meta, const char *content);
+void write_cell_value(MetaCell *meta, const char *value);
 void append_cell_content(MetaCell *meta, char character);
 void backspace_cell_content(MetaCell *meta);
 const char *cell_content(MetaCell *meta);
+const char *cell_value(MetaCell *meta);
 
 #endif

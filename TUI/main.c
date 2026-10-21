@@ -1,6 +1,7 @@
 #include "cell_manager.h"
 #include "file.h"
 #include "ref.h"
+#include "script.h"
 #include "tui.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -11,6 +12,7 @@
 #include "entry.h"
 
 #define KEY_CTRL_S 19
+#define KEY_CTRL_R 18
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -125,6 +127,18 @@ int main(int argc, char **argv) {
                 case KEY_DELETE:
                     clear_cell(&manager, manager.cursor.x, manager.cursor.y);
                     break;
+                case 'v':
+                    manager.showValues = !manager.showValues;
+                    break;
+                case KEY_CTRL_R: {
+                    char message[MESSAGE_SIZE];
+                    if (run_script(&manager, script_interpreter(), message, MESSAGE_SIZE) == SCRIPT_OK) {
+                        manager.showValues = true;
+                    }
+                    set_message(&manager, message);
+                    saved = true;
+                    break;
+                }
                 case KEY_CTRL_S:
                     if (path == NULL) {
                         set_message(&manager, "no file to save");

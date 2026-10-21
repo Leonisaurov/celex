@@ -48,6 +48,7 @@ CellManager new_cell_manager(TermSize size) {
         .y = 0,
     };
     manager.message[0] = '\0';
+    manager.showValues = false;
 
     if (0 != hashmap_create(35, &manager.map)) {
         // TODO! Error Handeling
@@ -85,6 +86,50 @@ MetaCell *get_cell(CellManager *manager, unsigned int x, unsigned int y) {
     sprintf(key, "%u,%u", x, y);
 
     return (MetaCell *) hashmap_get(&manager->map, key, (hashmap_uint32_t) strlen(key));
+}
+
+MetaCell *get_or_create_cell(CellManager *manager, unsigned int x, unsigned int y) {
+    MetaCell *meta = get_cell(manager, x, y);
+
+    if (meta != NULL) {
+        return meta;
+    }
+
+    meta = (MetaCell *) malloc(sizeof(MetaCell));
+    if (meta == NULL) {
+        return NULL;
+    }
+
+    meta->cell = new_cell();
+    meta->x = x;
+    meta->y = y;
+
+    char *key = cell_key(x, y);
+    hashmap_put(&manager->map, key, (hashmap_uint32_t) strlen(key), meta);
+
+    return meta;
+}
+
+void set_cell_value(CellManager *manager, unsigned int x, unsigned int y, const char *value) {
+    MetaCell *meta = get_or_create_cell(manager, x, y);
+
+    if (meta == NULL) {
+        return;
+    }
+
+    write_cell_value(meta, value);
+}
+
+static int clear_value(void *const context, struct hashmap_element_s *const element) {
+    (void) context;
+
+    write_cell_value((MetaCell *) element->data, "");
+
+    return 0;
+}
+
+void clear_cell_values(CellManager *manager) {
+    hashmap_iterate_pairs(&manager->map, clear_value, NULL);
 }
 
 void set_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *content) {
@@ -274,6 +319,10 @@ void print_cell_manager(CellManager *manager) {
             }
 
             const char *content = cell_content(meta);
+            if (manager->showValues) {
+                content = cell_value(meta);
+            }
+
             if (content[0] == '\0') {
                 continue;
             }
@@ -331,10 +380,19 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     char *ref = ref_to_string(manager->cursor.x, manager->cursor.y);
     MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
     const char *content = cell_content(meta);
+    const char *value = cell_value(meta);
 
     char status[MESSAGE_SIZE * 2];
     snprintf(status, sizeof(status), " %s  %-6s  %-16s  %s", ref, mode, content, path == NULL ? "[no file]" : path);
     free(ref);
+
+    if (manager->showValues && value[0] != '\0') {
+        int offset = (int) strlen(status) + 1;
+        if (offset < width) {
+            move_cursor((uint16_t) offset, (uint16_t) y);
+            fwrite(value, 1, strlen(value) < (size_t) (width - offset) ? strlen(value) : (size_t) (width - offset), stdout);
+        }
+    }
 
     move_cursor(0, (uint16_t) y);
     printf("\x1b[7m");
