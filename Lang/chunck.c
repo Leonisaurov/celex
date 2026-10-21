@@ -1,4 +1,5 @@
 #include "chunck.h"
+#include <inttypes.h>
 #include <stdio.h>
 
 Chunck chunk;
@@ -68,7 +69,7 @@ void printChunck() {
 			case OP_UPN: {
 					     uint32_t ref = getUInt(i);
 					     printf("\tContent: %u\n", ref);
-					     printf("\tRef: %lu\n", (unsigned long) getInt64(ref));
+					     printf("\tRef: %" PRId64 "\n", getInt64(ref));
 					     i += sizeof(uint32_t);
 					     break;
 				     }

@@ -39,8 +39,8 @@ make build
 
 Two binaries are built:
 
-- `build/celex` — the editor.
-- `build/celexs` — the interpreter, to run a `.cle` file without the editor.
+- `build/celex` â€” the editor.
+- `build/celexs` â€” the interpreter, to run a `.cle` file without the editor.
 
 ```sh
 make run         # opens the editor with sample.cle
@@ -49,14 +49,45 @@ make run-script  # runs sample.cle and prints the values of the cells
 
 `make clean` removes the binaries.
 
+### Build on Windows
+
+The editor talks to the terminal, so it needs a small layer per system: on
+POSIX it uses `termios` and on Windows the console of Win32. Both live in
+`TUI/tui_platform.c` and the rest of the code is the same everywhere.
+
+On Windows the build uses MSVC, from *Visual Studio Build Tools*:
+
+```bat
+build.bat           :: release
+build.bat debug     :: with debug symbols
+build.bat clean     :: removes the binaries
+```
+
+It produces the same two binaries, with the `.exe` extension:
+
+- `build\celex.exe` â€” the editor.
+- `build\celexs.exe` â€” the interpreter.
+
+```bat
+build\celex.exe sample.cle
+build\celexs.exe sample.cle --values
+```
+
+The editor needs a console that understands ANSI escape sequences: Windows
+Terminal and the console of Windows 10 and later do. On the older console the
+colors and the alternate screen are lost, but the editor still works.
+
+The `build` directory is shared by both systems, so `make clean` and
+`build.bat clean` remove the binaries of the two of them.
+
 ## Keys
 
 | Key                | Action                                    |
 |--------------------|-------------------------------------------|
-| `h` `a` `←`       | move the cursor left                      |
-| `l` `d` `→`       | move the cursor right                     |
-| `k` `w` `↑`       | move the cursor up                        |
-| `j` `s` `↓`       | move the cursor down                      |
+| `h` `a` `â†`       | move the cursor left                      |
+| `l` `d` `â†’`       | move the cursor right                     |
+| `k` `w` `â†‘`       | move the cursor up                        |
+| `j` `s` `â†“`       | move the cursor down                      |
 | any printable key  | start editing the cell, replacing content |
 | `i` or `Enter`     | start editing the cell, keeping content   |
 | `Backspace`        | delete the last character of the cell     |
@@ -130,7 +161,6 @@ C1 = "hola"
 - The right hand side is free form Celex Script; the editor stores it
   verbatim and never rewrites it.
 - Cells are written back sorted by row and then by column.
-- The language has no comment syntax, so the editor never writes comments.
   Lines that are not cell assignments are ignored when loading and the
   status bar warns about them.
 
@@ -147,7 +177,6 @@ B1 = A1 + A2
 
 becomes `A1 = 1`, `A2 = 2`, `B1 = 3` in the grid.
 
-The `v` key switches between the values and the source of the cells, and the
 status bar always shows the source of the selected cell.
 
 The interpreter can also be used on its own, which is what the editor does

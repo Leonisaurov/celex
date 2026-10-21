@@ -1,4 +1,5 @@
 #include "vm.h"
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -106,9 +107,9 @@ static void initStack() {
 }
 
 static void bigStack() {
-	Variable* vars = (Variable*) realloc(stack.vars, sizeof(Variable) * stack.size * 1.5);
+	Variable* vars = (Variable*) realloc(stack.vars, sizeof(Variable) * stack.size * 3 / 2);
 	if (vars == NULL) {
-		printf("Error al hacer el Stack más grande\n");
+		printf("Error al hacer el Stack mÃ¡s grande\n");
 		return;
 	}
 
@@ -252,9 +253,9 @@ static Variable arithmetic(op_code code, Variable left, Variable right, bool* er
 		if (left.type == VAR_STR && right.type == VAR_STR) {
 			snprintf(buffer, sizeof(buffer), "%s%s", left.value.str, right.value.str);
 		} else if (left.type == VAR_STR) {
-			snprintf(buffer, sizeof(buffer), "%s%ld", left.value.str, (long) right.value.number);
+			snprintf(buffer, sizeof(buffer), "%s%" PRId64, left.value.str, right.value.number);
 		} else {
-			snprintf(buffer, sizeof(buffer), "%ld%s", (long) left.value.number, right.value.str);
+			snprintf(buffer, sizeof(buffer), "%" PRId64 "%s", left.value.number, right.value.str);
 		}
 
 		return makeString(buffer);
@@ -312,7 +313,7 @@ static void printValue(Variable var) {
 			fprintf(output, "nil\n");
 			break;
 		default:
-			fprintf(output, "%ld\n", var.value.number);
+			fprintf(output, "%" PRId64 "\n", var.value.number);
 			break;
 	}
 }
@@ -569,7 +570,7 @@ static char* formatValue(Variable value) {
 		case VAR_NULO:
 			return NULL;
 		default:
-			snprintf(buffer, sizeof(buffer), "%ld", (long) value.value.number);
+			snprintf(buffer, sizeof(buffer), "%" PRId64, value.value.number);
 			break;
 	}
 

@@ -1,4 +1,5 @@
 #include "scanner.h"
+#include <inttypes.h>
 
 typedef struct {
 	const char* source;
@@ -57,7 +58,7 @@ char* translateTokenType(TokenType type) {
 }
 
 void printToken(Token token) {
-	printf("Token: %s\n\tSegment: \"%.*s\"\n\t%lu:%lu\n\tLine: %hu\n", translateTokenType(token.type), (int)token.len, token.start, (unsigned long) (token.start - code.source), token.len,token.line);
+	printf("Token: %s\n\tSegment: \"%.*s\"\n\t%zu:%" PRIu64 "\n\tLine: %hu\n", translateTokenType(token.type), (int)token.len, token.start, (size_t) (token.start - code.source), token.len, token.line);
 }
 #endif
 

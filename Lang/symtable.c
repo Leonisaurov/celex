@@ -1,4 +1,5 @@
 #include "symtable.h"
+#include <inttypes.h>
 #include <stdio.h>
 
 SymTable table;
@@ -27,9 +28,9 @@ int printSymbol(void *const context, struct hashmap_element_s *const element) {
 	printf("\t'%.*s':\n", element->key_len,(char*) element->key);
 	Nav* nav = (Nav*) element->data;
 	if (nav->str != -1)
-		printf("\t\tstring: %lu\n", nav->str);
+		printf("\t\tstring: %" PRId64 "\n", nav->str);
 	if (nav->number != -1)
-		printf("\t\tnumber: %lu\n", nav->number);
+		printf("\t\tnumber: %" PRId64 "\n", nav->number);
 	return 0;
 }
 
@@ -129,7 +130,7 @@ uint32_t addString(const char* start, uint32_t len) {
 	if (nav->str == -1) {
 		nav->str = writeString(start, len);
 	}
-	return nav->str;
+	return (uint32_t) nav->str;
 }
 
 int freeItems(void* const context, void *const element) {

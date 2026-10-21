@@ -2,7 +2,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <process.h>
+#define CELEX_PID() ((unsigned long) _getpid())
+#define CELEX_POPEN _popen
+#define CELEX_PCLOSE _pclose
+#define NULL_DEVICE "NUL"
+#else
 #include <unistd.h>
+#define CELEX_PID() ((long) getpid())
+#define CELEX_POPEN popen
+#define CELEX_PCLOSE pclose
+#define NULL_DEVICE "/dev/null"
+#endif
 
 #include "file.h"
 #include "ref.h"
@@ -16,7 +29,7 @@ int run_script(CellManager *manager, char *message, size_t size) {
     }
 
     // La salida del programa no debe romper la pantalla del editor.
-    FILE *sink = fopen("/dev/null", "w");
+    FILE *sink = fopen(NULL_DEVICE, "w");
     if (sink != NULL) {
         sheet_set_output(sink);
     }
@@ -53,10 +66,27 @@ int run_script(CellManager *manager, char *message, size_t size) {
 }
 
 static char *temp_path(const char *suffix) {
-    char *path = (char *) malloc(64);
-    sprintf(path, "/tmp/celex-%ld%s", (long) getpid(), suffix);
+#ifdef _WIN32
+    const char *temp = getenv("TEMP");
+
+    if (temp == NULL || temp[0] == '\0') {
+        temp = getenv("TMP");
+    }
+
+    if (temp == NULL || temp[0] == '\0') {
+        temp = ".";
+    }
+
+    char *path = (char *) malloc(256);
+    sprintf(path, "%s\\celex-%lu%s", temp, CELEX_PID(), suffix);
 
     return path;
+#else
+    char *path = (char *) malloc(64);
+    sprintf(path, "/tmp/celex-%ld%s", CELEX_PID(), suffix);
+
+    return path;
+#endif
 }
 
 static char *read_file(const char *path) {
@@ -109,9 +139,14 @@ int run_external_script(CellManager *manager, const char *interpreter, char *mes
     }
 
     char command[1024];
+#ifdef _WIN32
+    // En Windows el comando lo interpreta cmd.exe, que usa comillas dobles.
+    snprintf(command, sizeof(command), "\"%s\" \"%s\" --values 2> \"%s\"", interpreter, script, errors);
+#else
     snprintf(command, sizeof(command), "'%s' '%s' --values 2> '%s'", interpreter, script, errors);
+#endif
 
-    FILE *pipe = popen(command, "r");
+    FILE *pipe = CELEX_POPEN(command, "r");
     if (pipe == NULL) {
         snprintf(message, size, "cannot run the interpreter");
         remove(script);
@@ -152,7 +187,7 @@ int run_external_script(CellManager *manager, const char *interpreter, char *mes
         set_cell_value(manager, x, y, value);
     }
 
-    int status = pclose(pipe);
+    int status = CELEX_PCLOSE(pipe);
 
     char *error = read_file(errors);
     remove(script);
