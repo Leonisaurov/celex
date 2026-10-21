@@ -119,24 +119,52 @@ static int collect_entry(void *const context, struct hashmap_element_s *const el
     return 0;
 }
 
+char *sheet_source(CellManager *manager) {
+    FileEntries entries = {NULL, 0, 0};
+    hashmap_iterate_pairs(&manager->map, collect_entry, &entries);
+
+    qsort(entries.items, entries.count, sizeof(FileEntry), compare_entries);
+
+    size_t length = 1;
+    for (size_t i = 0; i < entries.count; i++) {
+        length += strlen(entries.items[i].content) + 16;
+    }
+
+    char *source = (char *) malloc(length);
+    if (source == NULL) {
+        free(entries.items);
+        return NULL;
+    }
+
+    source[0] = '\0';
+    for (size_t i = 0; i < entries.count; i++) {
+        char *reference = ref_to_string(entries.items[i].x, entries.items[i].y);
+        strcat(source, reference);
+        strcat(source, " = ");
+        strcat(source, entries.items[i].content);
+        strcat(source, "\n");
+        free(reference);
+    }
+
+    free(entries.items);
+
+    return source;
+}
+
 int save_file(const char *path, CellManager *manager) {
     FILE *file = fopen(path, "w");
     if (file == NULL) {
         return FILE_ERROR;
     }
 
-    FileEntries entries = {NULL, 0, 0};
-    hashmap_iterate_pairs(&manager->map, collect_entry, &entries);
-
-    qsort(entries.items, entries.count, sizeof(FileEntry), compare_entries);
-
-    for (size_t i = 0; i < entries.count; i++) {
-        char *reference = ref_to_string(entries.items[i].x, entries.items[i].y);
-        fprintf(file, "%s = %s\n", reference, entries.items[i].content);
-        free(reference);
+    char *source = sheet_source(manager);
+    if (source == NULL) {
+        fclose(file);
+        return FILE_ERROR;
     }
 
-    free(entries.items);
+    fputs(source, file);
+    free(source);
     fclose(file);
 
     return FILE_LOADED;

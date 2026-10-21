@@ -132,7 +132,8 @@ int main(int argc, char **argv) {
                     break;
                 case KEY_CTRL_R: {
                     char message[MESSAGE_SIZE];
-                    if (run_script(&manager, script_interpreter(), message, MESSAGE_SIZE) == SCRIPT_OK) {
+                    int status = run_script(&manager, message, MESSAGE_SIZE);
+                    if (status == SCRIPT_OK) {
                         manager.showValues = true;
                     }
                     set_message(&manager, message);

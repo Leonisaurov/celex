@@ -4,27 +4,69 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "compiler.h"
 #include "file.h"
+#include "parser.h"
 #include "ref.h"
+#include "vm.h"
 
-const char* script_interpreter() {
-    const char* interpreter = getenv("CELEXS");
-
-    if (interpreter == NULL || interpreter[0] == '\0') {
-        return "celexs";
+int run_script(CellManager *manager, char *message, size_t size) {
+    char *source = sheet_source(manager);
+    if (source == NULL) {
+        snprintf(message, size, "cannot build the script");
+        return SCRIPT_ERROR;
     }
 
-    return interpreter;
+    char *program = NULL;
+    uint64_t length = 0;
+
+    if (compile(source, (byte **) &program, &length) != COMPILER_RESULT_OK) {
+        snprintf(message, size, "%s", parseError());
+        free(source);
+        return SCRIPT_ERROR;
+    }
+
+    free(source);
+
+    execute(program);
+
+    CellValue *values = NULL;
+    size_t count = 0;
+    sheetValues(&values, &count);
+
+    clear_cell_values(manager);
+
+    for (size_t i = 0; i < count; i++) {
+        unsigned int x = 0;
+        unsigned int y = 0;
+
+        if (!ref_parse(values[i].ref, &x, &y)) {
+            continue;
+        }
+
+        set_cell_value(manager, x, y, values[i].value);
+    }
+
+    freeCellValues(values, count);
+
+    freeVM();
+    free(program);
+    freeSymTable();
+    freeChunck();
+
+    snprintf(message, size, "script executed");
+
+    return SCRIPT_OK;
 }
 
-static char* temp_path(const char* suffix) {
+static char *temp_path(const char *suffix) {
     char *path = (char *) malloc(64);
     sprintf(path, "/tmp/celex-%ld%s", (long) getpid(), suffix);
 
     return path;
 }
 
-static char* read_file(const char* path) {
+static char *read_file(const char *path) {
     FILE *file = fopen(path, "r");
     if (file == NULL) {
         return NULL;
@@ -57,11 +99,7 @@ static char* read_file(const char* path) {
     return content;
 }
 
-static void clear_values(CellManager *manager) {
-    clear_cell_values(manager);
-}
-
-int run_script(CellManager *manager, const char *interpreter, char *message, size_t size) {
+int run_external_script(CellManager *manager, const char *interpreter, char *message, size_t size) {
     if (interpreter == NULL || interpreter[0] == '\0') {
         snprintf(message, size, "no interpreter");
         return SCRIPT_ERROR;
@@ -89,7 +127,7 @@ int run_script(CellManager *manager, const char *interpreter, char *message, siz
         return SCRIPT_ERROR;
     }
 
-    clear_values(manager);
+    clear_cell_values(manager);
 
     char line[4096];
     while (fgets(line, sizeof(line), pipe) != NULL) {
@@ -118,12 +156,7 @@ int run_script(CellManager *manager, const char *interpreter, char *message, siz
             continue;
         }
 
-        MetaCell *meta = get_or_create_cell(manager, x, y);
-        if (meta == NULL) {
-            continue;
-        }
-
-        write_cell_value(meta, value);
+        set_cell_value(manager, x, y, value);
     }
 
     int status = pclose(pipe);

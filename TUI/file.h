@@ -9,4 +9,7 @@
 int load_file(const char *path, CellManager *manager, int *ignored);
 int save_file(const char *path, CellManager *manager);
 
+// La hoja como script de celex, con una linea por celda.
+char *sheet_source(CellManager *manager);
+
 #endif

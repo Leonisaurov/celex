@@ -3,20 +3,34 @@
 A spreadsheet that lives in the terminal, written in C, with a dedicated
 scripting language (`.cle` files).
 
-The TUI in `TUI/` is the editor: it renders the sheet, lets you write the
-source of every cell and stores that source back into a `.cle` file. The
-`Celex-Script` repository holds the language implementation (scanner,
-compiler and VM) that evaluates those files and gives back the value of
-every cell.
+The editor writes the sheet as a script, the language evaluates it and gives
+back the value of every cell.
+
+## Layout
+
+```
+TUI/      the editor: grid, cells, keys and the .cle file
+Lang/     the language: scanner, parser, compiler and virtual machine
+Common/   shared code: cell references and file helpers
+```
 
 ## Build
 
 ```sh
 make build
-make run          # opens sample.cle
 ```
 
-`make clean` removes the binary.
+Two binaries are built:
+
+- `build/celex` — the editor.
+- `build/celexs` — the interpreter, to run a `.cle` file without the editor.
+
+```sh
+make run         # opens the editor with sample.cle
+make run-script  # runs sample.cle and prints the values of the cells
+```
+
+`make clean` removes the binaries.
 
 ## Keys
 
@@ -32,34 +46,53 @@ make run          # opens sample.cle
 | `Esc`              | leave the cell                            |
 | `x` or `Del`       | clear the cell                            |
 | `v`                | show the values or the source of the cells|
-| `Ctrl+R`           | run the sheet with celex-script           |
+| `Ctrl+R`           | evaluate the sheet                        |
 | `Ctrl+S`           | save the sheet into the opened file       |
 | `q`                | quit                                      |
 
-## Running the sheet
-
-`Ctrl+R` writes the sheet to a temporary script, runs it with the
-interpreter of
-[Celex-Script](https://github.com/Leonisaurov/Celex-Script) and fills every
-cell with the value that the language calculates:
+## The language
 
 ```
+# Una hoja: cada linea asigna el valor de una celda
 A1 = 1
 A2 = 2
 B1 = A1 + A2
+C1 = "hola"
+
+# Variables
+total = 0
+name = "celex"
+
+# Print
+print total
+print name + "!"
+
+# Condicionales
+if total > 10 {
+    print "grande"
+} else {
+    print "chico"
+}
+
+# Bucles
+for i in 1:5 {
+    total = total + i
+}
+
+while total < 100 {
+    total = total + 10
+}
 ```
 
-becomes `A1 = 1`, `A2 = 2`, `B1 = 3` in the grid.
-
-The interpreter is looked up in the `CELEXS` environment variable, and
-`celexs` in the `PATH` is used when it is not set:
-
-```sh
-CELEXS=../Celex-Script/build/celexs ./celex sheet.cle
-```
-
-The `v` key switches between the values and the source of the cells, and the
-status bar always shows the source of the selected cell.
+- **Literals**: numbers (`42`), strings (`"hola"`), booleans (`true`, `false`).
+- **Variables**: `name = expression`.
+- **Cells**: `A1 = expression`, with the usual spreadsheet reference. The
+  columns go from `A` to `ZZ` and the rows start at 1.
+- **Operators**: `+` `-` `*` `/`, comparisons `==` `!=` `>` `<` `>=` `<=`, and
+  the unary minus. `+` also joins strings.
+- **Statements**: `print`, `input`, `if`/`else`, `while`, `for`, `return`.
+- **Blocks**: `{ ... }`. A statement ends with a new line or a `;`.
+- The numbers are integers for now.
 
 ## File format
 
@@ -74,9 +107,9 @@ B1 = A1 + A2
 C1 = "hola"
 ```
 
-- The reference is scanned as a cell reference (`TOKEN_REF`) by the
-  Celex Script scanner, `=` as an assignment and the right hand side as the
-  expression of the cell, so the file is valid Celex Script.
+- The reference is scanned as a cell reference (`TOKEN_REF`) by the scanner,
+  `=` as an assignment and the right hand side as the expression of the
+  cell, so the file is valid Celex Script.
 - The right hand side is free form Celex Script; the editor stores it
   verbatim and never rewrites it.
 - Cells are written back sorted by row and then by column.
@@ -84,6 +117,29 @@ C1 = "hola"
   Lines that are not cell assignments are ignored when loading and the
   status bar warns about them.
 
-The editor keeps the whole cell source in memory, so a cell can hold more
-text than the 4x2 characters shown on screen; the status bar always shows
-the complete source of the selected cell.
+## Evaluating the sheet
+
+`Ctrl+R` takes the sheet, compiles it with the language of `Lang/` and fills
+every cell with the value that it calculates:
+
+```
+A1 = 1
+A2 = 2
+B1 = A1 + A2
+```
+
+becomes `A1 = 1`, `A2 = 2`, `B1 = 3` in the grid.
+
+The `v` key switches between the values and the source of the cells, and the
+status bar always shows the source of the selected cell.
+
+The interpreter can also be used on its own, which is what the editor does
+under the hood:
+
+```sh
+./build/celexs sheet.cle --values
+```
+
+With `--values` the output of the program goes to stderr and stdout only
+carries the resulting cells, one per line, with the same format the editor
+reads.

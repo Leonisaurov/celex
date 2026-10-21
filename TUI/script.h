@@ -6,12 +6,12 @@
 #define SCRIPT_OK 0
 #define SCRIPT_ERROR -1
 
-// Ejecuta la hoja con el interprete de celex-script y guarda en cada celda
-// el valor calculado. Devuelve SCRIPT_OK o SCRIPT_ERROR, y deja el motivo en
-// el buffer de mensaje.
-int run_script(CellManager *manager, const char *interpreter, char *message, size_t size);
+// Evalua la hoja con el lenguaje de celex y guarda en cada celda el valor
+// calculado. Devuelve SCRIPT_OK o SCRIPT_ERROR, y deja el motivo en el buffer
+// de mensaje.
+int run_script(CellManager *manager, char *message, size_t size);
 
-// Devuelve el interprete a usar: la variable de entorno CELEXS o "celexs".
-const char* script_interpreter();
+// Ejecuta la hoja con un interprete externo, en vez de con la libreria.
+int run_external_script(CellManager *manager, const char *interpreter, char *message, size_t size);
 
 #endif
