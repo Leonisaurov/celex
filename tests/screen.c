@@ -597,9 +597,34 @@ int main(int argc, char **argv) {
             fputs(cell->bytes, stdout);
 
             if (showColors) {
-                // Se marca el color en un numero: fondo, negrita, invertido.
-                char mark[8];
-                snprintf(mark, sizeof(mark), "[%d]", cell->bg >= 0 ? (int) cell->bg : (cell->attrs & 8 ? 99 : 0));
+                // Se marca con que color esta pintada la celda: el numero es el
+                // color de delante, b el de atras, i la inversion y u el
+                // subrayado.
+                char mark[16];
+                mark[0] = '\0';
+
+                if (cell->fg >= 0) {
+                    snprintf(mark, sizeof(mark), "<%d", (int) cell->fg);
+
+                    if (cell->bg >= 0) {
+                        snprintf(mark + strlen(mark), sizeof(mark) - strlen(mark), " b%d", (int) cell->bg);
+                    }
+
+                    if (cell->attrs & 1) {
+                        snprintf(mark + strlen(mark), sizeof(mark) - strlen(mark), " n");
+                    }
+
+                    if (cell->attrs & 4) {
+                        snprintf(mark + strlen(mark), sizeof(mark) - strlen(mark), " u");
+                    }
+
+                    snprintf(mark + strlen(mark), sizeof(mark) - strlen(mark), ">");
+                } else if (cell->bg >= 0) {
+                    snprintf(mark, sizeof(mark), "<b%d>", (int) cell->bg);
+                } else if (cell->attrs & 8) {
+                    snprintf(mark, sizeof(mark), "<i>");
+                }
+
                 fputs(mark, stdout);
             }
         }

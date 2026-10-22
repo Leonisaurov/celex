@@ -28,7 +28,7 @@ int main(int argc, char **argv) {
             snprintf(message, MESSAGE_SIZE, "file loaded%s", ignored > 0 ? " (some lines ignored)" : "");
             set_message(&manager, message);
         } else if (status == FILE_ERROR) {
-            set_message(&manager, "cannot open file");
+            set_error_message(&manager, "cannot open file");
         } else {
             set_message(&manager, "new sheet");
         }

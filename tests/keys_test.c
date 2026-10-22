@@ -9,6 +9,7 @@
 #include "cell_manager.h"
 #include "clipboard.h"
 #include "keys.h"
+#include "theme.h"
 #include "tui.h"
 
 #include <stdbool.h>
@@ -295,6 +296,28 @@ int main(void) {
     check(cellWidth == baseWidth && cellHeight == baseHeight, "el corchete y la llave de abrir los deshacen");
 
     free_cell_manager(&sized);
+
+    // Los temas de colores: el Ctrl+T pasa al siguiente, y dando la vuelta
+    // entera se vuelve al de empezar.
+    CellManager themed = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    Editor themedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+
+    const char *first = theme_name();
+
+    handle_key(&themedEditor, &themed, KEY_CTRL_T);
+    check(strcmp(theme_name(), first) != 0, "el Ctrl+T cambia el tema");
+    check_message(&themed, theme_name(), "la barra dice el tema que esta puesto");
+
+    // Se da la vuelta a la lista menos una: falta un tema para volver al
+    // principio.
+    for (int i = 0; i < theme_count() - 2; i++) {
+        handle_key(&themedEditor, &themed, KEY_CTRL_T);
+    }
+
+    handle_key(&themedEditor, &themed, KEY_CTRL_T);
+    check(strcmp(theme_name(), first) == 0, "los temas dan la vuelta y vuelven al primero");
+
+    free_cell_manager(&themed);
 
     free_cell_manager(&empty);
     free_cell_manager(&manager);

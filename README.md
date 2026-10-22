@@ -43,6 +43,7 @@ Inside `TUI/` the editor is in pieces, each one with its own job:
 | `TUI/tui_platform.c` | the system: `termios` on POSIX, the console of Win32 on Windows |
 | `TUI/cell_manager.c` | the sheet, the drawing and the history            |
 | `TUI/clipboard.c`    | the clipboard of the editor, and the one of the system |
+| `TUI/theme.c`        | the colors: what each part of the screen looks like   |
 | `TUI/script.c`       | runs the sheet and fills the cells with their values |
 | `TUI/file.c`         | reads and writes the `.cle` file                  |
 
@@ -200,6 +201,7 @@ the keyboard, so a slow frame is a key that answers late.
 | `]` `[`            | wider or narrower cells                   |
 | `}` `{`            | taller or shorter cells                   |
 | `Ctrl+R`           | evaluate the sheet                        |
+| `Ctrl+T`           | change the colors of the editor           |
 | `Ctrl+S`           | save the sheet into the opened file       |
 | `Ctrl+Z`           | undo the last change                      |
 | `Ctrl+Y`           | redo the change that was undone           |
@@ -258,6 +260,24 @@ The size of the cells is not fixed: `]` and `[` make a cell wider or narrower,
 puts more of the sheet on the screen. The two sizes have limits — from two
 columns to forty, from one row to eight — so a cell can never be bigger than
 the screen nor too small to read.
+
+`Ctrl+T` goes to the next set of colors, and the bar says which one is on.
+There are three: the one the editor always had, which is the terminal's own
+colors with the selected cell turned around; `oscuro`, for a dark terminal, with
+the grid in gray so it does not weigh, the values in yellow to tell them apart
+from the source, and the selected cell on blue; and `claro`, for a light
+terminal, with the same parts in colors that read on white.
+
+What is colored is the grid, the column letters and the row numbers, the source
+of a cell, the value of a cell, the selected cell, the dashed border of the
+copied one, the status bar, and what the bar says — which is red when something
+failed, so an error is seen without reading it.
+
+The colors of a cell are part of the frame: every cell of the screen keeps the
+style it is drawn with, and only the cells whose character or style changed are
+written again. Two styles that paint the same thing are written as one sequence,
+which is what keeps a frame with no color as small as it was before the colors
+existed.
 
 The status bar starts with the number of the build, so it is always clear
 which binary is being used. It is the commit of the repository, with a `+`

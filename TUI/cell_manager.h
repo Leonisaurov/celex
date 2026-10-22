@@ -39,6 +39,8 @@ typedef struct {
     // Donde esta el cursor de texto dentro del contenido, en bytes.
     size_t editOffset;
     char message[MESSAGE_SIZE];
+    // Si lo que dice la barra es un error, y no un aviso normal.
+    bool messageIsError;
     History undo;
     History redo;
     // El portapapeles del editor: lo que se copia y lo que se pega.
@@ -56,6 +58,9 @@ void set_cell_content(CellManager *manager, unsigned int x, unsigned int y, cons
 void clear_cell(CellManager *manager, unsigned int x, unsigned int y);
 void set_message(CellManager *manager, const char *message);
 
+// Lo mismo, pero la barra lo pinta como un error.
+void set_error_message(CellManager *manager, const char *message);
+
 void print_cell_manager(CellManager *manager);
 void print_status(CellManager *manager, const char *mode, const char *path);
 
@@ -66,6 +71,9 @@ int pan_frames(int dx, int dy);
 // El tamano de las celdas, en columnas y filas de pantalla. Fuera de los
 // limites no se sale.
 void set_cell_size(int width, int height);
+
+// Olvida lo que habia en la pantalla, para que lo siguiente se pinte entero.
+void invalidate_screen(void);
 
 // Vacia la hoja entera y olvida los cambios deshechos.
 void clear_sheet(CellManager *manager);

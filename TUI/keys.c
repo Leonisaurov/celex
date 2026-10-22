@@ -4,6 +4,7 @@
 #include "file.h"
 #include "ref.h"
 #include "script.h"
+#include "theme.h"
 #include "tui.h"
 
 #include <stdbool.h>
@@ -22,7 +23,7 @@ bool recalculate_sheet(CellManager *manager) {
         return false;
     }
 
-    set_message(manager, message);
+    set_error_message(manager, message);
 
     return true;
 }
@@ -307,6 +308,17 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
             case '{':
                 set_cell_size(cellWidth, cellHeight - 1);
                 break;
+            case KEY_CTRL_T:
+                // El siguiente tema de colores. La barra dice cual esta
+                // puesto, para no perderlo de vista.
+                set_message(manager, theme_next());
+
+                // Los colores no estan en el fotograma: hay que volver a
+                // pintarlo entero para que se noten.
+                invalidate_screen();
+
+                keepMessage = true;
+                break;
             case KEY_CTRL_R: {
                 char message[MESSAGE_SIZE];
                 int status = run_script(manager, message, MESSAGE_SIZE);
@@ -316,8 +328,12 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                     if (message[0] == '\0') {
                         snprintf(message, sizeof(message), "script executed");
                     }
+
+                    set_message(manager, message);
+                } else {
+                    set_error_message(manager, message);
                 }
-                set_message(manager, message);
+
                 keepMessage = true;
                 break;
             }
@@ -329,7 +345,8 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                     manager->dirty = false;
                     keepMessage = true;
                 } else {
-                    set_message(manager, "cannot write file");
+                    set_error_message(manager, "cannot write file");
+                    keepMessage = true;
                 }
                 break;
             default:

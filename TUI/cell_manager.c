@@ -1,5 +1,6 @@
 #include "cell_manager.h"
 #include "hashmap.h"
+#include "theme.h"
 #include "tui.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -33,8 +34,13 @@ static void free_previous(void);
 
 // La pantalla se dibuja por columnas, no por bytes: un caracter de la caja
 // ocupa tres bytes en UTF-8 pero una sola columna. Cada celda del buffer
-// guarda un caracter completo.
-#define CELL_BYTES 4
+// guarda un caracter completo (GLYPH_BYTES) y despues el estilo con el que se
+// pinta, con tres bytes de relleno para que todas ocupen lo mismo.
+#define GLYPH_BYTES 4
+#define CELL_BYTES 8
+
+// El estilo de una celda del buffer, que va justo despues del caracter.
+#define CELL_STYLE(cell) ((ScreenStyle) (unsigned char) (cell)[GLYPH_BYTES])
 
 #define BOX_H "\xE2\x94\x80"
 #define BOX_V "\xE2\x94\x82"
@@ -77,7 +83,7 @@ static char *cell_at(char *buffer, int width, int x, int y) {
     return buffer + ((size_t) y * (size_t) width + (size_t) x) * CELL_BYTES;
 }
 
-static void put_box(char *buffer, int width, int height, int x, int y, const char *glyph) {
+static void put_box(char *buffer, int width, int height, int x, int y, const char *glyph, ScreenStyle style) {
     if (x < 0 || x >= width || y < 0 || y >= height) {
         return;
     }
@@ -85,14 +91,30 @@ static void put_box(char *buffer, int width, int height, int x, int y, const cha
     char *cell = cell_at(buffer, width, x, y);
 
     // La celda se limpia entera, para que comparar dos fotogramas sea
-    // comparar los bytes de la celda.
+    // comparar los bytes de la celda: el caracter y su estilo.
     memset(cell, 0, CELL_BYTES);
 
     memcpy(cell, glyph, 3);
     cell[3] = '\0';
+    cell[GLYPH_BYTES] = (char) (unsigned char) style;
 }
 
-static void put_char(char *buffer, int width, int height, int x, int y, const char *text, size_t size) {
+// Deja un espacio con el estilo pedido, para pintar de color un sitio donde no
+// hay nada que ver: el bloque de la celda seleccionada.
+static void put_blank(char *buffer, int width, int height, int x, int y, ScreenStyle style) {
+    if (x < 0 || x >= width || y < 0 || y >= height) {
+        return;
+    }
+
+    char *cell = cell_at(buffer, width, x, y);
+
+    memset(cell, 0, CELL_BYTES);
+
+    cell[0] = ' ';
+    cell[GLYPH_BYTES] = (char) (unsigned char) style;
+}
+
+static void put_char(char *buffer, int width, int height, int x, int y, const char *text, size_t size, ScreenStyle style) {
     if (x < 0 || x >= width || y < 0 || y >= height) {
         return;
     }
@@ -102,14 +124,16 @@ static void put_char(char *buffer, int width, int height, int x, int y, const ch
     memset(cell, 0, CELL_BYTES);
 
     // Un caracter que no cabe en la celda se dibuja como interrogacion.
-    if (size >= CELL_BYTES) {
+    if (size >= GLYPH_BYTES) {
         cell[0] = '?';
         cell[1] = '\0';
+        cell[GLYPH_BYTES] = (char) (unsigned char) style;
         return;
     }
 
     memcpy(cell, text, size);
     cell[size] = '\0';
+    cell[GLYPH_BYTES] = (char) (unsigned char) style;
 }
 
 static char *duplicate_text(const char *text) {
@@ -493,6 +517,7 @@ CellManager new_cell_manager(TermSize size) {
     manager.originX = 0;
     manager.originY = 0;
     manager.message[0] = '\0';
+    manager.messageIsError = false;
     manager.showValues = false;
     manager.dirty = false;
     manager.editing = false;
@@ -634,12 +659,21 @@ void clear_cell(CellManager *manager, unsigned int x, unsigned int y) {
 }
 
 void set_message(CellManager *manager, const char *message) {
+    manager->messageIsError = false;
+
     if (message == NULL) {
         manager->message[0] = '\0';
         return;
     }
 
     snprintf(manager->message, MESSAGE_SIZE, "%s", message);
+}
+
+// Lo mismo, pero avisando de que lo que paso no salio: la barra lo pinta con
+// el estilo de los errores, para que se vea sin tener que leerlo.
+void set_error_message(CellManager *manager, const char *message) {
+    set_message(manager, message);
+    manager->messageIsError = true;
 }
 
 // Desplaza la vista lo justo para que la celda del cursor se vea entera. El
@@ -707,15 +741,34 @@ static int last_cell(int origin, int viewSize, int stride) {
     return to / stride;
 }
 
-// Escribe las celdas de una fila, sin pasarse del ancho de la pantalla.
+// Escribe las celdas de una fila, sin pasarse del ancho de la pantalla, y
+// cambiando de estilo cuando hace falta. Cada secuencia de estilo empieza
+// apagando lo que hubiera, asi que cambiar de estilo cuesta una sola.
+//
+// Lo que se compara es la secuencia, no el estilo: dos estilos pueden pintarse
+// igual, y en un tema sin color casi todos son el mismo apagado.
 static void write_cells(const char *cells, int from, int to) {
+    const char *pending = NULL;
+
     for (int x = from; x < to; x++) {
         const char *cell = cells + (size_t) x * CELL_BYTES;
+        const char *sequence = style_sequence(CELL_STYLE(cell));
         size_t length = strlen(cell);
+
+        if (pending == NULL || strcmp(pending, sequence) != 0) {
+            fputs(sequence, stdout);
+            pending = sequence;
+        }
 
         if (length > 0) {
             fwrite(cell, 1, length, stdout);
         }
+    }
+
+    // Se apaga el ultimo estilo, para que no se quede pegado en lo que se
+    // escriba despues.
+    if (pending != NULL && strcmp(pending, style_sequence(STYLE_NONE)) != 0) {
+        fputs(style_sequence(STYLE_NONE), stdout);
     }
 }
 
@@ -729,59 +782,18 @@ static void write_columns(const char *text, int columns) {
     }
 }
 
-// Escribe las celdas de [from, to) de una fila, con el resaltado en su sitio.
-// El hueco es la columna del cursor de texto, que se dibuja sin resaltar para
-// que se vea donde esta.
-static void write_range(const char *cells, int from, int to, int highlight_start, int highlight_end, int hole) {
-    int cursor = from;
-
-    // La parte que va antes del resaltado.
-    if (highlight_start > cursor && highlight_start < to) {
-        write_cells(cells, cursor, highlight_start);
-        cursor = highlight_start;
-    }
-
-    // La parte resaltada.
-    if (highlight_end > cursor && highlight_start < to && highlight_end > from) {
-        int start = highlight_start > cursor ? highlight_start : cursor;
-        int end = highlight_end < to ? highlight_end : to;
-
-        if (hole >= start && hole < end) {
-            printf("\x1b[7m");
-            write_cells(cells, start, hole);
-            printf("\x1b[0m");
-            write_cells(cells, hole, hole + 1);
-            printf("\x1b[7m");
-            write_cells(cells, hole + 1, end);
-            printf("\x1b[0m");
-        } else {
-            printf("\x1b[7m");
-            write_cells(cells, start, end);
-            printf("\x1b[0m");
-        }
-
-        cursor = end;
-    }
-
-    write_cells(cells, cursor, to);
-}
-
-static void print_row(int y, const char *cells, int from, int to, int highlight_start, int highlight_end, int hole) {
+static void print_row(int y, const char *cells, int from, int to) {
     // El cursor va a la primera columna que se escribe, no a la primera de
     // la fila.
     move_cursor((uint16_t) from, (uint16_t) y);
 
-    write_range(cells, from, to, highlight_start, highlight_end, hole);
+    write_cells(cells, from, to);
 }
 
 // El ultimo fotograma, para redibujar solo lo que cambio.
 static char *previous_buffer = NULL;
 static int previous_width = 0;
 static int previous_height = 0;
-static int previous_highlight_x = 0;
-static int previous_highlight_y = 0;
-static int previous_text_cursor_x = -1;
-static int previous_text_cursor_y = -1;
 static bool previous_ready = false;
 
 // La ultima barra de estado, para no redibujarla si no cambio.
@@ -806,28 +818,7 @@ void set_cell_size(int width, int height) {
     // Con otro tamano todo cambia de sitio: se olvida el fotograma anterior,
     // para volver a pintar la rejilla entera en vez de ir corrigiendo lo que
     // se fue moviendo.
-    free_previous();
-}
-
-// El resaltado de una fila, o -1 si la fila no esta resaltada.
-static void row_highlight(int y, int highlight_x, int highlight_y, int width, int *start, int *end) {
-    *start = -1;
-    *end = -1;
-
-    if (y < highlight_y || y >= highlight_y + CELL_SIZE_Y) {
-        return;
-    }
-
-    int from = highlight_x;
-    int to = highlight_x + CELL_SIZE_X;
-
-    if (from < 0) from = 0;
-    if (to > width) to = width;
-    if (from > width) from = width;
-    if (to < from) to = from;
-
-    *start = from;
-    *end = to;
+    invalidate_screen();
 }
 
 static void free_previous(void) {
@@ -859,14 +850,14 @@ static void draw_copied_cell(CellManager *manager, char *buffer, int width, int 
 
     // Los lados de arriba y de abajo.
     for (int x = left; x <= right; x++) {
-        put_box(buffer, width, height, x, top, BOX_DASH_H);
-        put_box(buffer, width, height, x, bottom, BOX_DASH_H);
+        put_box(buffer, width, height, x, top, BOX_DASH_H, STYLE_COPIED);
+        put_box(buffer, width, height, x, bottom, BOX_DASH_H, STYLE_COPIED);
     }
 
     // Los lados de la izquierda y de la derecha.
     for (int y = top + 1; y < bottom; y++) {
-        put_box(buffer, width, height, left, y, BOX_DASH_V);
-        put_box(buffer, width, height, right, y, BOX_DASH_V);
+        put_box(buffer, width, height, left, y, BOX_DASH_V, STYLE_COPIED);
+        put_box(buffer, width, height, right, y, BOX_DASH_V, STYLE_COPIED);
     }
 }
 
@@ -925,7 +916,7 @@ static void paint_grid(CellManager *manager) {
         if (x < HEADER_WIDTH) continue;
 
         for (int y = HEADER_HEIGHT; y < status_y; y++) {
-            put_box(buffer, width, height, x, y, BOX_V);
+            put_box(buffer, width, height, x, y, BOX_V, STYLE_GRID);
         }
     }
 
@@ -936,7 +927,7 @@ static void paint_grid(CellManager *manager) {
         if (y < HEADER_HEIGHT || y >= status_y) continue;
 
         for (int x = HEADER_WIDTH; x < width; x++) {
-            put_box(buffer, width, height, x, y, BOX_H);
+            put_box(buffer, width, height, x, y, BOX_H, STYLE_GRID);
         }
     }
 
@@ -949,12 +940,24 @@ static void paint_grid(CellManager *manager) {
         for (int row = firstRow; row <= lastRow; row++) {
             int y = HEADER_HEIGHT + row * STRIDE_Y - manager->originY;
 
-            put_box(buffer, width, height, x, y, BOX_CR);
+            put_box(buffer, width, height, x, y, BOX_CR, STYLE_GRID);
         }
     }
 
     // La celda copiada queda con un borde punteado, para saber cual es.
     draw_copied_cell(manager, buffer, width, height);
+
+    // El bloque de la celda seleccionada, pintado antes que su contenido: asi
+    // lo que se ve dentro es un espacio con el estilo de la seleccion cuando la
+    // celda esta vacia, que es como se nota que esa es.
+    int highlight_x = HEADER_WIDTH + (int) manager->cursor.x * STRIDE_X + 1 - manager->originX;
+    int highlight_y = HEADER_HEIGHT + (int) manager->cursor.y * STRIDE_Y + 1 - manager->originY;
+
+    for (int row = 0; row < CELL_SIZE_Y; row++) {
+        for (int column = 0; column < CELL_SIZE_X; column++) {
+            put_blank(buffer, width, height, highlight_x + column, highlight_y + row, STYLE_CURSOR);
+        }
+    }
 
     for (int column = firstColumn; column <= lastColumn; column++) {
         char *name = ref_column_name((unsigned int) column);
@@ -967,7 +970,7 @@ static void paint_grid(CellManager *manager) {
             // numeros de fila.
             if (x < HEADER_WIDTH) continue;
 
-            put_char(buffer, width, height, x, HEADER_HEIGHT - 1, name + i, 1);
+            put_char(buffer, width, height, x, HEADER_HEIGHT - 1, name + i, 1, STYLE_HEADER);
         }
         free(name);
     }
@@ -987,7 +990,7 @@ static void paint_grid(CellManager *manager) {
         for (int i = 0; i < length; i++) {
             // Alineado a la derecha, dejando libre la columna del separador.
             int x = HEADER_WIDTH - 2 - (length - 1 - i);
-            put_char(buffer, width, height, x, y, label + i, 1);
+            put_char(buffer, width, height, x, y, label + i, 1, STYLE_HEADER);
         }
     }
 
@@ -1014,6 +1017,17 @@ static void paint_grid(CellManager *manager) {
             // que se ve es siempre lo que se esta escribiendo.
             if (manager->showValues && !is_cursor && !is_selected) {
                 content = cell_value(meta);
+            }
+
+            // La celda seleccionada lleva el estilo de la seleccion, para que
+            // el bloque se vea entero; lo demas es fuente o valor, segun lo que
+            // se muestre.
+            ScreenStyle style = STYLE_TEXT;
+
+            if (is_selected) {
+                style = STYLE_CURSOR;
+            } else if (manager->showValues) {
+                style = STYLE_VALUE;
             }
 
             if (content[0] == '\0') {
@@ -1065,7 +1079,7 @@ static void paint_grid(CellManager *manager) {
                 // Lo que se sale por arriba o por la izquierda se corta: el
                 // margen y la fila de las letras no se pisan.
                 if (px >= HEADER_WIDTH && py >= HEADER_HEIGHT) {
-                    put_char(buffer, width, height, px, py, content + index, size);
+                    put_char(buffer, width, height, px, py, content + index, size, style);
                 }
 
                 index += size;
@@ -1084,10 +1098,13 @@ static void paint_grid(CellManager *manager) {
         }
     }
 
-    // El rectangulo resaltado es la celda del cursor, con el desplazamiento
-    // de la vista ya aplicado.
-    int highlight_x = HEADER_WIDTH + (int) manager->cursor.x * STRIDE_X + 1 - manager->originX;
-    int highlight_y = HEADER_HEIGHT + (int) manager->cursor.y * STRIDE_Y + 1 - manager->originY;
+    // El hueco del cursor de texto: la celda donde entra lo que se escriba se
+    // queda sin el estilo de la seleccion, para que se vea donde esta dentro del
+    // bloque.
+    if (text_cursor_x >= 0 && text_cursor_y >= 0 && text_cursor_y < status_y) {
+        char *cell = cell_at(buffer, width, text_cursor_x, text_cursor_y);
+        cell[GLYPH_BYTES] = (char) (unsigned char) STYLE_NONE;
+    }
 
     // Cuando cambia el tamano de la terminal hay que redibujar todo.
     bool full = !previous_ready || previous_width != width || previous_height != height;
@@ -1105,17 +1122,7 @@ static void paint_grid(CellManager *manager) {
         const char *row = buffer + (size_t) y * (size_t) width * CELL_BYTES;
         const char *old_row = previous_ready ? previous_buffer + (size_t) y * (size_t) previous_width * CELL_BYTES : NULL;
 
-        int start = -1;
-        int end = -1;
-        row_highlight(y, highlight_x, highlight_y, width, &start, &end);
-
-        int old_start = -1;
-        int old_end = -1;
-        if (previous_ready) {
-            row_highlight(y, previous_highlight_x, previous_highlight_y, previous_width, &old_start, &old_end);
-        }
-
-        // Las columnas que cambian de contenido.
+        // Las columnas que cambian de caracter o de estilo.
         int from = 0;
         int to = width;
 
@@ -1131,31 +1138,8 @@ static void paint_grid(CellManager *manager) {
             }
         }
 
-        // El resaltado viejo y el nuevo tienen que quedar tapados, porque el
-        // inverso de la terminal se queda pegado.
-        if (old_start >= 0) {
-            if (from > old_start) from = old_start;
-            if (to < old_end) to = old_end;
-        }
-
-        if (start >= 0) {
-            if (from > start) from = start;
-            if (to < end) to = end;
-        }
-
-        // Si el cursor de texto se movio, las filas donde estaba y donde esta
-        // se redibujan enteras, para que no quede el hueco del cursor viejo.
-        if (text_cursor_x != previous_text_cursor_x || text_cursor_y != previous_text_cursor_y) {
-            if (y == text_cursor_y || y == previous_text_cursor_y) {
-                from = 0;
-                to = width;
-            }
-        }
-
-        int hole = (y == text_cursor_y) ? text_cursor_x : -1;
-
         if (to > from) {
-            print_row(y, row, from, to, start, end, hole);
+            print_row(y, row, from, to);
         }
     }
 
@@ -1175,13 +1159,18 @@ static void paint_grid(CellManager *manager) {
 
     memcpy(previous_buffer, buffer, cells_count * CELL_BYTES);
 
-    previous_highlight_x = highlight_x;
-    previous_highlight_y = highlight_y;
-    previous_text_cursor_x = text_cursor_x;
-    previous_text_cursor_y = text_cursor_y;
     previous_ready = true;
 
     flush();
+}
+
+// Olvida el fotograma anterior, para que el proximo se pinte entero. Hace falta
+// cuando cambia algo que no esta en el fotograma, como los colores: el buffer
+// guarda el estilo de cada celda, no la secuencia, asi que al mudar de tema las
+// celdas no cambian de bytes y el redibujado por diferencias no pintaria nada.
+void invalidate_screen(void) {
+    free_previous();
+    previous_status_ready = false;
 }
 
 // Cuantos fotogramas se pintan en medio de un desplazamiento, y cuanto se
@@ -1350,6 +1339,9 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     snprintf(size_text, sizeof(size_text), "%dx%d", cellWidth, cellHeight);
     append_padded(status, sizeof(status), size_text, 4);
     append_text(status, sizeof(status), "  ");
+    // El tema puesto, para saber con que colores se esta trabajando.
+    append_padded(status, sizeof(status), theme_name(), 6);
+    append_text(status, sizeof(status), "  ");
     // La celda copiada, para saber que hay en el portapapeles.
     char copied[16];
     copied[0] = '\0';
@@ -1392,9 +1384,8 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     int offset = utf8_columns(status) + 1;
 
     move_cursor(0, (uint16_t) y);
-    printf("\x1b[7m");
+    fputs(style_sequence(STYLE_STATUS), stdout);
     write_columns(status, width);
-    printf("\x1b[0m");
 
     if (offset < width) {
         // El valor o el mensaje van encima de la barra, y despues se ponen
@@ -1403,12 +1394,26 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
         int was = utf8_columns(previous_extra);
 
         move_cursor((uint16_t) offset, (uint16_t) y);
+
+        // Un error se pinta como un error, un aviso como un aviso, y el valor
+        // de la celda como los valores de la rejilla.
+        ScreenStyle extraStyle = STYLE_VALUE;
+
+        if (manager->message[0] != '\0') {
+            extraStyle = manager->messageIsError ? STYLE_ERROR : STYLE_MESSAGE;
+        }
+
+        fputs(style_sequence(extraStyle), stdout);
         write_columns(extra, width - offset);
 
         for (int i = columns; i < was && offset + i < width; i++) {
             fputc(' ', stdout);
         }
     }
+
+    // Se apaga el ultimo estilo, para que no se quede pegado en la siguiente
+    // cosa que se escriba.
+    fputs(style_sequence(STYLE_NONE), stdout);
 
     snprintf(previous_status, sizeof(previous_status), "%s", status);
     snprintf(previous_extra, sizeof(previous_extra), "%s", extra);

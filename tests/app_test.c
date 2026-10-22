@@ -26,6 +26,10 @@
 
 static int failures = 0;
 
+// El color de las rayas de la rejilla en el segundo tema, que es el primero con
+// color. Esta en TUI/theme.c, y si alli cambia cambia aqui.
+#define GRID_COLOR "\x1b[0;90m"
+
 static void check(bool ok, const char *what) {
     if (ok) {
         return;
@@ -422,6 +426,51 @@ int main(int argc, char **argv) {
     if (screen != NULL) {
         check_has(screen, "777", "la vista se desplaza hasta la celda del cursor");
         check_has(screen, "T1", "la barra dice donde esta el cursor despues del desplazamiento");
+    }
+
+    free(screen);
+
+    remove(sheetPath);
+    remove(keysPath);
+    remove(outPath);
+
+    // Y los colores. El tema de empezar no pinta nada con color, y el Ctrl+T
+    // pasa a uno que si: lo que se comprueba es que la secuencia del color de
+    // las rayas llegue a la pantalla.
+    if (!write_file(sheetPath, "A1 = 1\n", 7)) {
+        printf("  FALLO: no se puede escribir el archivo de la hoja\n");
+        return 1;
+    }
+
+    if (!write_file(keysPath, "q", 1)) {
+        printf("  FALLO: no se puede escribir el archivo de las teclas\n");
+        return 1;
+    }
+
+    status = run_editor(editor, sheetPath, keysPath, outPath);
+    check(status == 0, "el editor sale sin errores");
+
+    screen = read_file(outPath);
+
+    if (screen != NULL) {
+        check(strstr(screen, GRID_COLOR) == NULL, "el tema de empezar no pinta con color");
+    }
+
+    free(screen);
+    remove(outPath);
+
+    if (!write_file(keysPath, "\x14q", 2)) {
+        printf("  FALLO: no se puede escribir el archivo de las teclas\n");
+        return 1;
+    }
+
+    status = run_editor(editor, sheetPath, keysPath, outPath);
+    check(status == 0, "el editor sale sin errores");
+
+    screen = read_file(outPath);
+
+    if (screen != NULL) {
+        check_has(screen, GRID_COLOR, "el Ctrl+T pinta la rejilla con el color del tema");
     }
 
     free(screen);
