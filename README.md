@@ -31,6 +31,26 @@ TUI  ->  Sheet  ->  Lang  ->  Common
   and runs a program and keeps the cells it is told to assign.
 - `Sheet/cli.c` is the standalone interpreter, built on the same module.
 
+### The editor
+
+Inside `TUI/` the editor is in pieces, each one with its own job:
+
+| File                 | What it does                                     |
+|----------------------|--------------------------------------------------|
+| `TUI/main.c`         | the loop: draw, wait for a key, handle it        |
+| `TUI/keys.c`         | what each key does                               |
+| `TUI/input.c`        | turns what the terminal sends into keys and pastes|
+| `TUI/tui_platform.c` | the system: `termios` on POSIX, the console of Win32 on Windows |
+| `TUI/cell_manager.c` | the sheet, the drawing and the history            |
+| `TUI/clipboard.c`    | the clipboard of the editor, and the one of the system |
+| `TUI/script.c`       | runs the sheet and fills the cells with their values |
+| `TUI/file.c`         | reads and writes the `.cle` file                  |
+
+The keys are handled in `TUI/keys.c` and not in `main.c` on purpose: the
+tests press the same keys the program does, instead of calling the
+functions that are underneath. That is the only way to be sure that a
+change does what it looks like it does.
+
 ## Build
 
 ```sh
@@ -77,6 +97,18 @@ The editor needs a console that understands ANSI escape sequences: Windows
 Terminal and the console of Windows 10 and later do. On the older console the
 colors and the alternate screen are lost, but the editor still works.
 
+The editor puts what it copies in the clipboard of the system, so it needs
+`user32.lib` on Windows:
+
+```bat
+cl /nologo /std:c11 /W3 /utf-8 /ITUI TUI\*.c Common\ref.c Sheet\sheet.c ^
+   Sheet\order.c Lang\*.c /link user32.lib
+```
+
+On POSIX the copy to the clipboard of the system is best effort: it uses
+`xclip`, `wl-copy` or `pbcopy`, whichever is there. If none of them is
+installed, the clipboard of the editor still works.
+
 The `build` directory is shared by both systems, so `make clean` and
 `build.bat clean` remove the binaries of the two of them.
 
@@ -96,7 +128,7 @@ of cases is in `tests/cases.txt`.
 
 The runner is written in C, so the same tests run on both systems.
 
-There are four suites: `tests/runner.c` runs the interpreter over the cases
+The suites are: `tests/runner.c` runs the interpreter over the cases
 of `tests/cases` and compares what it prints with `tests/expected`;
 `tests/editor_test.c` checks the editing of the cells — writing in an empty
 cell, inserting in the middle, deleting, undoing — without needing a
@@ -171,9 +203,9 @@ mark stays until something else is copied.
 
 The clipboard is the one of the editor, so the `Ctrl+C` and the `Ctrl+V`
 always work with the same thing, no matter what the terminal does with
-those keys. While a cell is being edited, the `Ctrl+C` and the `Ctrl+V` work
-with the text, like in any text editor: the `Ctrl+C` copies the text of the
-cell and the `Ctrl+V` puts it where the text cursor is.
+those keys. While a cell is being edited, the `Ctrl+C` and the `Ctrl+V`
+work with the text, like in any text editor: the `Ctrl+C` copies the text
+of the cell and the `Ctrl+V` puts it where the text cursor is.
 
 Some terminals use the `Ctrl+V` for themselves: the Windows Terminal, for
 example, pastes the clipboard of the system. To make that work, the editor
@@ -190,10 +222,6 @@ The status bar starts with the number of the build, so it is always clear
 which binary is being used. It is the commit of the repository, with a `+`
 when there are changes that were not committed.
 
-If the terminal has some text selected, the `Ctrl+C` copies that selection
-instead of reaching the editor. The `Ctrl+V` of the terminal always works:
-the editor has the copied cell in the clipboard of the system.
-
 If the sheet has changes that were not saved, `q` asks for a confirmation
 before leaving.
 
@@ -202,6 +230,49 @@ useful when it changes from the outside. If there are changes that were not
 saved, it asks for a confirmation first, because reloading throws them
 away.
 
+## The terminal
+
+The editor talks to the terminal as a stream of bytes, and the same on every
+system. `TUI/tui_platform.c` reads the bytes — from `termios` on POSIX
+and from the events of the console of Win32 on Windows — and `TUI/input.c`
+turns them into keys:
+
+- A character is a key.
+- The escape sequences of the arrows, `Home`, `End` and `Delete` are keys.
+- A `Ctrl`+letter is the control code of the letter.
+
+A paste is something else: it is a text that the terminal gives at once, and
+not keys that a person pressed. There are two ways of telling them apart:
+
+- The editor asks the terminal to mark the pastes (`ESC[?2004h`). Then the
+  pasted text arrives between `ESC[200~` and `ESC[201~`.
+- When the markers are not there — the console of Windows takes them out,
+  and so do the terminals that do not know the mode — the editor sees a
+  burst of characters that arrived together, and that is a paste too.
+
+A burst is told apart from typing by the time: a person cannot press two
+different keys in less than 10 ms, and the editor only calls a burst a paste
+when the characters are not all the same, because a key that is held down
+repeats the same character.
+
+The console of Windows has its own way of sending the keys with `Ctrl`, the
+*win32-input-mode* (`CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _`). The editor
+understands it, and it also understands the plain control codes, so it works
+the same in the Windows Terminal, in the old console and in a terminal of
+Linux.
+
+### When it does not work
+
+- **The editor does not answer**: it is waiting for a key that never comes.
+  In the console of Windows this happens when the events of the console are
+  not being read; `tests/console_test.c` is the test that catches it.
+- **The `Ctrl+V` pastes something else**: the terminal has a keybinding of
+  its own for it, and it pastes the clipboard of the system. That is why the
+  editor puts what it copies there too.
+- **The `Ctrl+C` does nothing**: there is text selected in the terminal. The
+  Windows Terminal copies the selection and does not let the key reach the
+  editor. With `Esc`, or with a click, the selection goes away and the
+  `Ctrl+C` copies the cell.
 ## The language
 
 ```
