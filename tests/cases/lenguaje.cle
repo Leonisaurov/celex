@@ -1,0 +1,81 @@
+total = 0
+A1 = 1
+A2 = 2
+B1 = A1 + A2
+C1 = "hola"
+
+print "numeros"
+print 42
+print -7
+print 3 + 4 * 2
+print (3 + 4) * 2
+print 7 / 2
+print 7 - 2
+print A1
+print B1
+
+print "cadenas"
+name = "celex"
+print name
+print "hola" + " " + name
+print C1
+print B1 + 100
+
+print "booleanos"
+print true
+print false
+print 1 == 1
+print 1 != 2
+print 2 > 1
+print 1 < 2
+print 2 >= 2
+print 2 <= 1
+print "a" == "a"
+print "a" != "b"
+
+print "if"
+size = 0
+if total > 100 {
+    size = 3
+} else if total > 10 {
+    size = 2
+} else {
+    size = 1
+}
+print size
+if name == "celex" {
+    print "el editor"
+}
+
+print "while"
+n = 5
+while n > 0 {
+    n = n - 1
+}
+print n
+
+print "for"
+steps = 0
+for i in 1:5 {
+    steps = steps + i
+}
+print steps
+
+print "celdas en orden"
+D1 = B1 + C2
+C2 = 10
+B2 = 1
+D2 = C2 + B2
+print D1
+print D2
+
+print "sentencias con punto y coma"
+x = 1; y = 2; print x + y
+
+print "variable leida"
+input dato
+print "se llamo a input"
+
+print "fin"
+return
+print "esto no se ve"

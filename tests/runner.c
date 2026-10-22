@@ -17,12 +17,16 @@
 #define POPEN _popen
 #define PCLOSE _pclose
 #define SIN_ERRORS "2>nul"
+// La entrada del interprete se deja vacia: lo que lea un `input` no depende de
+// quien este por la consola.
+#define SIN_ENTRADA " <nul"
 // En Windows la barra se usa como separador, y cmd.exe no acepta la otra.
 #define SEP "\\"
 #else
 #define POPEN popen
 #define PCLOSE pclose
 #define SIN_ERRORS "2>/dev/null"
+#define SIN_ENTRADA " </dev/null"
 #define SEP "/"
 #endif
 
@@ -114,8 +118,11 @@ static bool check_case(const char* interpreter, const char* directory, const cha
         return false;
     }
 
-    // La primera linea del esperado es el codigo de salida.
+    // La primera linea del esperado es el codigo de salida. Puede llevar
+    // tambien la palabra "programa", que es el modo en el que el caso se fija en
+    // lo que el programa imprime, y no en las celdas que deja.
     int wantedExit = 0;
+    bool programMode = false;
     char* content = wanted;
     char* newline = strchr(wanted, '\n');
     if (newline != NULL) {
@@ -126,6 +133,8 @@ static bool check_case(const char* interpreter, const char* directory, const cha
             wantedExit = atoi(marker + 5);
         }
 
+        programMode = strstr(wanted, "programa") != NULL;
+
         content = newline + 1;
     }
 
@@ -133,9 +142,17 @@ static bool check_case(const char* interpreter, const char* directory, const cha
 #ifdef _WIN32
     // cmd.exe quita las comillas de fuera del comando, asi que se ponen dos
     // pares: uno para el comando y otro para cada programa.
-    snprintf(command, sizeof(command), "\"\"%s\" \"%s\" --values %s\"", interpreter, source, SIN_ERRORS);
+    if (programMode) {
+        snprintf(command, sizeof(command), "\"\"%s\" \"%s\"%s %s\"", interpreter, source, SIN_ENTRADA, SIN_ERRORS);
+    } else {
+        snprintf(command, sizeof(command), "\"\"%s\" \"%s\" --values%s %s\"", interpreter, source, SIN_ENTRADA, SIN_ERRORS);
+    }
 #else
-    snprintf(command, sizeof(command), "\"%s\" \"%s\" --values %s", interpreter, source, SIN_ERRORS);
+    if (programMode) {
+        snprintf(command, sizeof(command), "\"%s\" \"%s\"%s %s", interpreter, source, SIN_ENTRADA, SIN_ERRORS);
+    } else {
+        snprintf(command, sizeof(command), "\"%s\" \"%s\" --values%s %s", interpreter, source, SIN_ENTRADA, SIN_ERRORS);
+    }
 #endif
 
     char* output = (char*) malloc(MAX_SIZE);

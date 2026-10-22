@@ -7,3 +7,4 @@ circulo
 autorreferencia
 vacias
 vacia
+lenguaje

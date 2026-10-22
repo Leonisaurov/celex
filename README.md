@@ -135,6 +135,24 @@ Each case is a `.cle` file in `tests/cases` and what it should print in
 interpreter should return, and the rest is what it should print. The list
 of cases is in `tests/cases.txt`.
 
+By default a case is checked in `--values` mode, so what is compared is the cells
+the script leaves. An expected file that says `programa` on its first line is run
+without the flag, and compares what the program prints instead. The interpreter
+always gets its input from nothing, so a script with an `input` in it answers the
+same wherever the tests run.
+
+`tests/cases/lenguaje.cle` is the tour of the language: every construct it has —
+numbers, strings, booleans, variables, cells and their references, the operators
+and their precedence, `print`, `input`, `if`/`else if`/`else`, `while`, `for` over
+a range, `;` between statements, an assignment with no value, a cell that uses a
+cell written further down, and `return`. It is the case to run by hand to see the
+interpreter and the command line work:
+
+```sh
+build/celexs tests/cases/lenguaje.cle          # lo que imprime el programa
+build/celexs tests/cases/lenguaje.cle --values # lo que dejan sus celdas
+```
+
 The runner is written in C, so the same tests run on both systems.
 
 The suites are: `tests/runner.c` runs the interpreter over the cases
