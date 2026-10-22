@@ -8,6 +8,24 @@ and gives back the value of every cell. The editor keeps its own document
 (`.clex`) apart from the script, so a `.cle` stays something to write by hand:
 see [Two files](#two-files).
 
+## Documentation
+
+This file is the front door: what it is, how to build it, how to run it, the keys.
+The reference is in [`docs/`](docs/README.md), one file per subject, written in
+Spanish like the code comments:
+
+| | |
+|---|---|
+| [`docs/organizacion.md`](docs/organizacion.md) | the layers, every file, the build, the build number, the commit style |
+| [`docs/pantalla.md`](docs/pantalla.md) | the layout, the three bars, the frame, why the view slides |
+| [`docs/teclas-y-raton.md`](docs/teclas-y-raton.md) | every key, every click, the row of tools |
+| [`docs/hojas-historial-y-entrada.md`](docs/hojas-historial-y-entrada.md) | sheets, clipboard, undo, autocompletion |
+| [`docs/temas-y-formatos.md`](docs/temas-y-formatos.md) | the themes with their sequences, cell formats, the palette |
+| [`docs/archivos.md`](docs/archivos.md) | `.cle` and `.clex`: the whole grammar, loading, saving, what is lost |
+| [`docs/lenguaje.md`](docs/lenguaje.md) | celex script: what it accepts, and everything it does not |
+| [`docs/pruebas.md`](docs/pruebas.md) | the case runner, the five test binaries, the two look-at-it tools |
+| [`docs/ideas.md`](docs/ideas.md) | what is left, and what writing the docs turned up |
+
 ## Layout
 
 The editor and the language are separate, and a module layer joins them:

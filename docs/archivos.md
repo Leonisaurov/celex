@@ -1,0 +1,162 @@
+# Los dos archivos
+
+Un trabajo de celex vive en dos ficheros, y cada uno es de uno.
+
+| | `.cle` | `.clex` |
+|---|---|---|
+| qué es | un programa de celex script | el documento del editor |
+| para quién | para que lo lea y lo escriba una persona | para que lo lea el editor |
+| contiene | una asignación por celda | hojas, formatos, tema, tamaños, dónde estaba el cursor |
+| qué lo entiende | `celexs` (el intérprete) y `load_script` | `document_load` |
+| a mano | sí, es limpio y simple | no: está delimitado por bloques, y no tiene comentarios |
+
+## El `.cle`
+
+Una línea por celda: la referencia, un igual, y el fuente.
+
+```
+A1 = 1
+A2 = 2
+B1 = A1 + A2
+C1 = "hola"
+```
+
+Al **exportar** (`Ctrl+E`) las celdas van ordenadas **por columna y después por
+fila**, que es el orden en que el lenguaje puede calcularlas: una celda ve las de
+encima en su columna y las de las columnas de la izquierda. Las celdas sin contenido
+no escriben línea. Del editor salen también las asignaciones a variables y los
+`print` que estuvieran en el fuente, porque el `.cle` es un programa: se importa lo
+que son celdas y se cuentan como ignoradas las demás.
+
+Al **importar** se queda con **una sola hoja**, que se llama como el archivo sin
+extensión, y se olvida lo que hubiera en el editor antes. Las líneas que no tienen
+igual, o cuya izquierda no es una referencia, se cuentan: `loaded (3 lines ignored)`.
+
+Con un `.cle` abierto, la barra dice `imported: saves as <ruta>.clex`: guarda al
+lado, en el formato del editor.
+
+## El `.clex`
+
+Escrito para que lo lea el editor. Una cosa por línea, y una palabra al principio de
+cada línea que dice qué es.
+
+```
+celex-document 1
+theme oscuro
+cell-size 4 2
+tools off
+sheet "numeros"
+  select E3
+  scroll 15 0
+  cell A1 "1"
+  cell B1 "A1 + A2"
+  cell C1 "\"hola\""
+  format C1 align=center bold fg=3
+end-sheet
+sheet "gastos"
+  select A1
+  scroll 0 0
+end-sheet
+```
+
+### La cabecera
+
+`celex-document 1` tiene que ser la primera línea, y el número es la versión del
+formato (hoy 1). **Es lo que decide qué es el archivo**: no la extensión. Si el
+texto empieza con esa cabecera es un documento; si no, es un guion. Así un archivo
+guardado con un nombre raro se sigue abriendo bien, y uno de una versión futura no
+deja de abrirse porque traiga un campo nuevo.
+
+Un documento **de una versión más nueva** que el editor se abre igual: se lee lo que
+se entiende y las líneas sueltas se cuentan como ignoradas.
+
+### Los campos de arriba
+
+| Línea | Qué hace | Si viene mal |
+|---|---|---|
+| `theme <nombre>` | pone el tema (`normal`, `oscuro`, `claro`), sin comillas | se ignora y se cuenta |
+| `cell-size <ancho> <alto>` | el tamaño de celda; se recorta a sus límites (2 a 40, 1 a 8) | números negativos se ignoran y se cuentan |
+| `tools off` | la fila de herramientas estaba quitada | cualquier otra palabra se ignora |
+
+`tools off` **solo se escribe cuando está quitada**: sin la línea, la fila está
+puesta. Es la única línea opcional de arriba.
+
+### Dentro de cada hoja
+
+`sheet "nombre"` abre el bloque y `end-sheet` lo cierra. La primera hoja del
+documento renombra la que ya había, en vez de añadir una: así un archivo con una
+hoja no deja dos.
+
+| Línea | Qué hace | Si viene mal |
+|---|---|---|
+| `select <REF>` | dónde estaba el cursor | sin referencia o fuera de una hoja: se ignora y se cuenta |
+| `scroll <x> <y>` | cuánto deslizada llevaba la vista, en columnas y filas de pantalla | negativos: se ignora y se cuenta |
+| `cell <REF> "<fuente>"` | el fuente de una celda | sin comillas, fuera de una hoja, o con referencia inválida: se ignora |
+| `format <REF> <fichas>` | el formato de una celda | ver abajo |
+
+Las celdas van ordenadas por columna y después por fila, igual que en el `.cle`. Una
+celda sin fuente no escribe línea `cell`, pero sí puede escribir su línea `format`:
+un sitio vacío se puede pintar antes de llenarlo.
+
+### La línea de formato
+
+Una ficha por campo, separadas por espacios, sin comillas — nunca llevan texto
+libre:
+
+| Ficha | Qué hace |
+|---|---|
+| `align=left`, `align=center`, `align=right` | la alineación (`align=default` también se acepta, y es como no ponerla) |
+| `bold` | negrita |
+| `underline` | subrayado |
+| `fg=<1 a 16>` | color del texto, de la paleta |
+| `bg=<1 a 16>` | color del fondo |
+
+**Todo o nada**: si una ficha no se entiende, o un color está fuera de 1 a 16, se
+descarta la línea entera y se cuenta como ignorada; no se queda medio formato
+puesto. Una celda cuyo formato es el de empezar no escribe línea.
+
+Al escribir, las fichas salen siempre en el mismo orden: `align=`, `bold`,
+`underline`, `fg=`, `bg=`.
+
+### Las comillas
+
+Lo que va entre comillas escapa la comilla como `\"` y la barra como `\\`. El
+contenido de una celda es siempre una línea: si en el fuente había un salto de línea
+o un retorno de carro, al escribir el documento se convierte en un espacio. Al leer,
+una barra hace literal el carácter de detrás.
+
+Un fuente de celda se lee en un sitio de 1024 bytes: **lo que pase de 1023
+caracteres se corta en silencio**.
+
+## Abrir y guardar
+
+- **Abrir** (`celex <archivo>`): si el texto tiene cabecera de documento, se carga
+  como documento; si no, se importa como guion. Los mensajes posibles:
+  `imported: saves as <ruta>` (era un guion), `file loaded` (era un documento),
+  `loaded (N lines ignored)`, `cannot open file`, o `new sheet` si el archivo no
+  existía.
+- **`Ctrl+S`** escribe siempre un **documento** en `savePath`: si se abrió un `.cle`
+  es el `.clex` de al lado; si se abrió un `.clex`, el mismo. Dice `saved`,
+  `no file to save`, o `cannot write file`.
+- **`Ctrl+E`** exporta la **hoja que se está viendo** como guion `.cle`, al lado del
+  documento. Dice `exported <ruta>`, `nothing to export` (sin documento donde mirar),
+  `the name does not fit`, o `cannot write the script`.
+- **`Ctrl+L`** vuelve a leer el archivo desde el disco. Si hay cambios sin guardar
+  pide confirmación: `unsaved changes: press Ctrl+L again to reload`.
+
+Un punto del nombre no es una extensión si cae dentro de un directorio:
+`carpeta.d/me` se guarda como `carpeta.d/me.clex`.
+
+## Qué se pierde en el viaje
+
+De `.clex` a `.cle` se quedan fuera todo lo que no sea el fuente de una celda:
+**los formatos**, **las demás hojas** (solo se exporta la que se ve), el tema, el
+tamaño de las celdas, la fila de herramientas, dónde estaba el cursor y cuánto
+deslizada la vista.
+
+De `.cle` a `.clex` se pierde todo lo que no sea una asignación de celda: las
+variables, los `print` y las sentencias del programa no se importan (se cuentan como
+ignoradas), y salen solo si el `.cle` se exporta desde un editor que las tenía.
+
+Por eso son dos archivos: `Ctrl+E` enseña el guion limpio para editarlo a mano o
+para correrlo con `celexs`, y `Ctrl+S` guarda la hoja de trabajo entera.
