@@ -256,6 +256,36 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
         // siempre con lo mismo.
         handle_paste(manager, get_paste_text());
         keepMessage = true;
+    } else if (key == KEY_CTRL_B || key == KEY_CTRL_U || key == KEY_CTRL_O) {
+        // El formato de la celda. Se puede cambiar mientras se escribe, como se
+        // cambia mientras se mira: es una capa encima del fuente, no dentro.
+        CellFormat *format = cursor_format(manager);
+        char message[MESSAGE_SIZE];
+
+        if (format == NULL) {
+            set_error_message(manager, "no room for the cell");
+            keepMessage = true;
+        } else {
+            if (key == KEY_CTRL_B) {
+                format->bold = format->bold != 0 ? 0 : 1;
+                snprintf(message, sizeof(message), "bold %s", format->bold != 0 ? "on" : "off");
+            } else if (key == KEY_CTRL_U) {
+                format->underline = format->underline != 0 ? 0 : 1;
+                snprintf(message, sizeof(message), "underline %s", format->underline != 0 ? "on" : "off");
+            } else {
+                // La alineacion da la vuelta: por defecto, izquierda, centro,
+                // derecha. Por defecto es como en una hoja de calculo: el numero
+                // a la derecha y el texto a la izquierda.
+                format->align = (unsigned char) ((format->align + 1) % 4);
+
+                const char *names[4] = { "default", "left", "center", "right" };
+
+                snprintf(message, sizeof(message), "align %s", names[format->align]);
+            }
+
+            set_message(manager, message);
+            keepMessage = true;
+        }
     } else if (sheet_state(manager)->editing) {
         switch (key) {
             case KEY_ESC:

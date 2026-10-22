@@ -54,7 +54,7 @@ void sheet_select(CellManager *manager, int index);
 #define CELL_BYTES 8
 
 // El estilo de una celda del buffer, que va justo despues del caracter.
-#define CELL_STYLE(cell) ((ScreenStyle) (unsigned char) (cell)[GLYPH_BYTES])
+#define CELL_STYLE(cell) ((int) (unsigned char) (cell)[GLYPH_BYTES])
 
 #define BOX_H "\xE2\x94\x80"
 #define BOX_V "\xE2\x94\x82"
@@ -97,7 +97,7 @@ static char *cell_at(char *buffer, int width, int x, int y) {
     return buffer + ((size_t) y * (size_t) width + (size_t) x) * CELL_BYTES;
 }
 
-static void put_box(char *buffer, int width, int height, int x, int y, const char *glyph, ScreenStyle style) {
+static void put_box(char *buffer, int width, int height, int x, int y, const char *glyph, int style) {
     if (x < 0 || x >= width || y < 0 || y >= height) {
         return;
     }
@@ -115,7 +115,7 @@ static void put_box(char *buffer, int width, int height, int x, int y, const cha
 
 // Deja un espacio con el estilo pedido, para pintar de color un sitio donde no
 // hay nada que ver: el bloque de la celda seleccionada.
-static void put_blank(char *buffer, int width, int height, int x, int y, ScreenStyle style) {
+static void put_blank(char *buffer, int width, int height, int x, int y, int style) {
     if (x < 0 || x >= width || y < 0 || y >= height) {
         return;
     }
@@ -128,7 +128,7 @@ static void put_blank(char *buffer, int width, int height, int x, int y, ScreenS
     cell[GLYPH_BYTES] = (char) (unsigned char) style;
 }
 
-static void put_char(char *buffer, int width, int height, int x, int y, const char *text, size_t size, ScreenStyle style) {
+static void put_char(char *buffer, int width, int height, int x, int y, const char *text, size_t size, int style) {
     if (x < 0 || x >= width || y < 0 || y >= height) {
         return;
     }
@@ -564,6 +564,109 @@ int completion_text(CellManager *manager, char *into, size_t size) {
     }
 
     return 1;
+}
+
+// El color de un numero de paleta, en secuencia ANSI: del 1 al 8 los oscuros,
+// del 9 al 16 los brillantes. `back` pide el fondo en vez del delante.
+static void color_sequence(int color, int back, char *into, size_t size) {
+    into[0] = '\0';
+
+    if (color <= 0) {
+        return;
+    }
+
+    if (color <= 8) {
+        snprintf(into, size, "\x1b[%dm", (back ? 40 : 30) + color - 1);
+        return;
+    }
+
+    snprintf(into, size, "\x1b[%dm", (back ? 100 : 90) + color - 9);
+}
+
+// El estilo con el que se pinta una celda: el del tema, con lo que diga su
+// formato por encima. Sin formato, el estilo del tema tal cual. La alineacion no
+// cuenta aqui: mueve el texto, no lo pinta.
+static int format_style(CellFormat format, int base) {
+    if (format.bold == 0 && format.underline == 0 && format.fg == 0 && format.bg == 0) {
+        return base;
+    }
+
+    char foreground[16];
+    char background[16];
+
+    color_sequence(format.fg, 0, foreground, sizeof(foreground));
+    color_sequence(format.bg, 1, background, sizeof(background));
+
+    char sequence[160];
+
+    snprintf(sequence, sizeof(sequence), "%s%s%s%s%s",
+             style_sequence(base),
+             format.bold != 0 ? "\x1b[1m" : "",
+             format.underline != 0 ? "\x1b[4m" : "",
+             foreground, background);
+
+    return style_custom(sequence);
+}
+
+// Si un texto es un numero, para alinearlo por defecto como en una hoja de
+// calculo. Un fuente de formula no lo es: empieza con el igual.
+static int looks_numeric(const char *text) {
+    int digits = 0;
+
+    for (; *text != '\0'; text++) {
+        if (*text >= '0' && *text <= '9') {
+            digits = 1;
+            continue;
+        }
+
+        if (*text == '.' || *text == ',' || *text == '-' || *text == '+') {
+            continue;
+        }
+
+        return 0;
+    }
+
+    return digits;
+}
+
+// Cuanto se corre una linea dentro de la celda, segun su alineacion. Lo que
+// sobra por la derecha se deja delante del texto, y lo de el centro se parte.
+// Sin decir nada, la celda se alinea como en una hoja de calculo.
+int align_pad(int align, const char *text, int lineLength) {
+    if (align == ALIGN_DEFAULT) {
+        align = looks_numeric(text) ? ALIGN_RIGHT : ALIGN_LEFT;
+    }
+
+    int free = CELL_SIZE_X - lineLength;
+
+    if (free <= 0) {
+        return 0;
+    }
+
+    if (align == ALIGN_RIGHT) {
+        return free;
+    }
+
+    if (align == ALIGN_CENTER) {
+        return free / 2;
+    }
+
+    return 0;
+}
+
+// El formato de la celda del cursor, para cambiarlo. La celda aparece si no
+// estaba: se puede dar formato a un sitio vacio de la misma forma que a uno con
+// algo escrito.
+CellFormat *cursor_format(CellManager *manager) {
+    MetaCell *meta = get_or_create_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
+
+    if (meta == NULL) {
+        return NULL;
+    }
+
+    SHEET->dirty = true;
+
+    return &meta->cell.format;
 }
 
 // El valor de una celda se invalida cuando su contenido cambia: si no, se
@@ -1490,13 +1593,21 @@ static void paint_grid(CellManager *manager) {
 
             // La celda seleccionada lleva el estilo de la seleccion, para que
             // el bloque se vea entero; lo demas es fuente o valor, segun lo que
-            // se muestre.
-            ScreenStyle style = STYLE_TEXT;
+            // se muestre. Encima de eso manda su formato, si lo tiene.
+            int style = STYLE_TEXT;
 
             if (is_selected) {
                 style = STYLE_CURSOR;
             } else if (manager->showValues) {
                 style = STYLE_VALUE;
+            }
+
+            CellFormat format = cell_format(meta);
+
+            style = format_style(format, style);
+
+            if (content[0] == '\0') {
+                continue;
             }
 
             if (content[0] == '\0') {
@@ -1520,10 +1631,18 @@ static void paint_grid(CellManager *manager) {
                 if (start > max_start) start = max_start;
             }
 
-            // Cada caracter ocupa una celda, no un byte.
+            // Cada caracter ocupa una celda, no un byte. Cuantos se ven, para
+            // poder alinear cada linea.
+            size_t visible = total > start ? total - start : 0;
+
+            if (visible > CELL_CAPACITY) {
+                visible = CELL_CAPACITY;
+            }
+
             size_t index = 0;
             int used = 0;
             int skipped = 0;
+            int pad = 0;
 
             while (content[index] != '\0') {
                 size_t size = utf8_size(content + index);
@@ -1538,7 +1657,19 @@ static void paint_grid(CellManager *manager) {
                     break;
                 }
 
-                int px = base_x + (used % CELL_SIZE_X);
+                // Al empezar linea se mira cuanto sobra en ella, que es lo que
+                // manda la alineacion.
+                if (used % CELL_SIZE_X == 0) {
+                    int lineLength = (int) (visible - (size_t) used);
+
+                    if (lineLength > CELL_SIZE_X) {
+                        lineLength = CELL_SIZE_X;
+                    }
+
+                    pad = align_pad(format.align, content, lineLength);
+                }
+
+                int px = base_x + pad + (used % CELL_SIZE_X);
                 int py = base_y + (used / CELL_SIZE_X);
 
                 if (py >= status_y) {
@@ -1561,8 +1692,17 @@ static void paint_grid(CellManager *manager) {
                 if (position < 0) position = 0;
                 if (position >= CELL_CAPACITY) position = CELL_CAPACITY - 1;
 
-                text_cursor_x = base_x + (position % CELL_SIZE_X);
-                text_cursor_y = base_y + (position / CELL_SIZE_X);
+                // El hueco del cursor de texto se alinea como la linea en la
+                // que cae.
+                int line = position / CELL_SIZE_X;
+                int lineLength = (int) (visible > (size_t) (line * CELL_SIZE_X) ? visible - (size_t) (line * CELL_SIZE_X) : 0);
+
+                if (lineLength > CELL_SIZE_X) {
+                    lineLength = CELL_SIZE_X;
+                }
+
+                text_cursor_x = base_x + align_pad(format.align, content, lineLength) + (position % CELL_SIZE_X);
+                text_cursor_y = base_y + line;
             }
         }
     }

@@ -280,6 +280,8 @@ int main(int argc, char **argv) {
     keys[length++] = 0x03;    // Ctrl+C
     keys[length++] = 'l';     // mover a la derecha
     keys[length++] = 0x16;    // Ctrl+V
+    keys[length++] = 0x02;    // Ctrl+B: negrita en la celda pegada
+    keys[length++] = 0x0F;    // Ctrl+O: y alineada a la izquierda
     keys[length++] = 0x05;    // Ctrl+E: exportar el guion .cle
     keys[length++] = 0x13;    // Ctrl+S: guardar el documento .clex
     keys[length++] = 'q';     // salir
@@ -304,6 +306,7 @@ int main(int argc, char **argv) {
         check_has(sheet, "B1 = 6*7", "la celda donde se pego se guardo");
         check(strstr(sheet, "theme") == NULL && strstr(sheet, "cell ") == NULL,
               "el guion exportado no lleva campos del editor");
+        check(strstr(sheet, "format") == NULL, "ni lleva los formatos");
     }
 
     free(sheet);
@@ -318,6 +321,7 @@ int main(int argc, char **argv) {
     if (document != NULL) {
         check_has(document, "celex-document 1", "el documento empieza con su cabecera");
         check_has(document, "cell A1 \"6*7\"", "el documento guarda las celdas con su estructura");
+        check_has(document, "format B1 align=left bold", "y guarda el formato de la celda");
     }
 
     free(document);

@@ -22,7 +22,19 @@ const char *theme_name(void);
 
 // La secuencia ANSI de un estilo. Siempre empieza apagando lo que hubiera,
 // asi que cambiar de estilo es escribir una sola secuencia.
-const char *style_sequence(ScreenStyle style);
+//
+// Ademas de los estilos del tema hay sitio para los que pone el formato de una
+// celda: se piden con style_custom, y el numero que devuelven vale mientras dura
+// el programa, para que el numero guardado en el fotograma signifique siempre lo
+// mismo.
+const char *style_sequence(int style);
+
+// Guarda una secuencia propia y devuelve su numero, o el estilo del texto si ya
+// no queda sitio.
+int style_custom(const char *sequence);
+
+// Olvida las secuencias propias: las del tema anterior no valen con el nuevo.
+void theme_reset_custom(void);
 
 // Pone el tema que sigue en la lista. Devuelve el nombre del que ha quedado.
 const char *theme_next(void);

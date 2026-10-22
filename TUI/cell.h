@@ -19,9 +19,28 @@ extern int cellHeight;
 #define CELL_MIN_HEIGHT 1
 #define CELL_MAX_HEIGHT 8
 
+// Donde se pone el texto dentro de la celda. Por defecto, el numero a la
+// derecha y el texto a la izquierda, como en cualquier hoja de calculo.
+#define ALIGN_DEFAULT 0
+#define ALIGN_LEFT 1
+#define ALIGN_CENTER 2
+#define ALIGN_RIGHT 3
+
+// Como se pinta una celda, aparte de lo que diga. Es una capa encima del fuente:
+// el lenguaje no ve nada de esto, y por eso se guarda en el documento del editor.
+// El color es un numero del 1 al 16, y 0 es el color del tema.
+typedef struct {
+    unsigned char align;
+    unsigned char bold;
+    unsigned char underline;
+    unsigned char fg;
+    unsigned char bg;
+} CellFormat;
+
 typedef struct {
     char *content;
     char *value;
+    CellFormat format;
 } Cell;
 
 typedef struct {
@@ -44,5 +63,10 @@ void delete_cell_text(MetaCell *meta, size_t offset, size_t length);
 
 const char *cell_content(MetaCell *meta);
 const char *cell_value(MetaCell *meta);
+
+// Como se pinta la celda. Una celda que no existe devuelve el formato de
+// empezar.
+CellFormat cell_format(MetaCell *meta);
+void set_cell_format(MetaCell *meta, CellFormat format);
 
 #endif

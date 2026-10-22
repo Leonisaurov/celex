@@ -317,6 +317,22 @@ int main(void) {
     sheet_state(&doc)->cursor.y = 2;
     sheet_state(&doc)->originX = 15;
 
+    // El formato de una celda con fuente, y el de una celda vacia: los dos son
+    // una capa encima del contenido, y los dos caben en el documento.
+    MetaCell *styled = get_or_create_cell(&doc, 1, 3);
+    CellFormat rightBold = { ALIGN_RIGHT, 1, 0, 3, 0 };
+
+    if (styled != NULL) {
+        set_cell_format(styled, rightBold);
+    }
+
+    MetaCell *painted = get_or_create_cell(&doc, 7, 1);
+    CellFormat filled = { ALIGN_DEFAULT, 0, 1, 0, 4 };
+
+    if (painted != NULL) {
+        set_cell_format(painted, filled);
+    }
+
     check(sheet_add(&doc, "gastos") > 0, "el documento tiene otra hoja");
     set_cell_content(&doc, 0, 0, "30");
 
@@ -335,6 +351,8 @@ int main(void) {
         check(strstr(text, "cell A1 \"\\\"hola\\\"\"") != NULL, "las comillas del fuente salen escapadas");
         check(strstr(text, "  select E3\n") != NULL, "guarda donde estaba el cursor");
         check(strstr(text, "  scroll 15 0\n") != NULL, "y lo deslizado que llevaba la vista");
+        check(strstr(text, "format B4 align=right bold fg=3\n") != NULL, "el formato sale en su linea");
+        check(strstr(text, "format H2 underline bg=4\n") != NULL, "y una celda vacia lleva solo su formato");
 
         CellManager back = new_cell_manager((TermSize) { .x = 80, .y = 24 });
         int ignored = -1;
@@ -355,6 +373,18 @@ int main(void) {
 
         sheet_select(&back, 1);
         check_content(&back, 0, 0, "30", "la otra hoja trae lo suyo");
+
+        sheet_select(&back, 0);
+
+        CellFormat backRight = cell_format(get_cell(&back, 1, 3));
+        CellFormat backFilled = cell_format(get_cell(&back, 7, 1));
+
+        check(backRight.align == ALIGN_RIGHT && backRight.bold == 1 && backRight.fg == 3,
+              "vuelve el formato de la celda");
+        check(backRight.underline == 0 && backRight.bg == 0, "y lo que no se puso sigue del tema");
+        check(backFilled.underline == 1 && backFilled.bg == 4 && backFilled.align == ALIGN_DEFAULT,
+              "vuelve el formato de la celda vacia");
+        check_content(&back, 7, 1, "", "que sigue sin fuente");
 
         // Un documento que empieza con un campo que no se conoce se lee igual:
         // asi un archivo de una version futura no deja de abrirse.
@@ -377,6 +407,49 @@ int main(void) {
     }
 
     free(text);
+
+    // Un formato roto no se medio cuela: la linea entera se ignora y se cuenta,
+    // y la celda se queda con lo que si se entendo.
+    const char *broken =
+        "celex-document 1\n"
+        "theme normal\n"
+        "cell-size 4 2\n"
+        "sheet \"rota\"\n"
+        "  cell A1 \"5\"\n"
+        "  format A1 align=sideways\n"
+        "  format A1 fg=99\n"
+        "  format A1 bold underline\n"
+        "end-sheet\n";
+
+    CellManager rota = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    int rotaIgnored = 0;
+
+    check(document_load(broken, &rota, &rotaIgnored) == 1, "un formato roto no cierra el documento");
+    check(rotaIgnored == 2, "y se cuenta cada linea que no vale");
+
+    CellFormat rotaFormat = cell_format(get_cell(&rota, 0, 0));
+
+    check(rotaFormat.bold == 1 && rotaFormat.underline == 1, "lo que si valia se pone");
+    check(rotaFormat.align == ALIGN_DEFAULT && rotaFormat.fg == 0, "lo que no, no");
+
+    free_cell_manager(&rota);
+
+    // Donde cae el texto dentro de la celda. Con celdas de ocho:
+    set_cell_size(8, 2);
+
+    check(align_pad(ALIGN_LEFT, "7", 1) == 0, "a la izquierda no se corre nada");
+    check(align_pad(ALIGN_RIGHT, "7", 1) == 7, "a la derecha se corre todo lo que sobra");
+    check(align_pad(ALIGN_CENTER, "siete", 5) == 1, "en el centro el hueco se parte, y el resto se queda detras");
+    check(align_pad(ALIGN_RIGHT, "siete y medio", 8) == 0, "lo que no cabe no se corre");
+
+    // La alineacion de empezar es la de una hoja de calculo.
+    check(align_pad(ALIGN_DEFAULT, "7", 1) == 7, "un numero suelto se va a la derecha");
+    check(align_pad(ALIGN_DEFAULT, "12.500", 6) == 2, "un numero con puntos tambien");
+    check(align_pad(ALIGN_DEFAULT, "-7", 2) == 6, "y uno con el signo delante");
+    check(align_pad(ALIGN_DEFAULT, "siete", 5) == 0, "un texto se queda a la izquierda");
+    check(align_pad(ALIGN_DEFAULT, "=7+1", 4) == 0, "un fuente no es un numero");
+
+    set_cell_size(4, 2);
 
     set_cell_size(4, 2);
     theme_set_by_name("normal");

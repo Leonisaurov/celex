@@ -79,6 +79,7 @@ typedef struct {
     unsigned int x;
     unsigned int y;
     const char *content;
+    CellFormat format;
 } DocumentEntry;
 
 typedef struct {
@@ -120,9 +121,67 @@ static int collect_entry(void *const context, struct hashmap_element_s *const el
     entries->items[entries->count].x = meta->x;
     entries->items[entries->count].y = meta->y;
     entries->items[entries->count].content = cell_content(meta);
+    entries->items[entries->count].format = meta->cell.format;
     entries->count++;
 
     return 0;
+}
+
+// Los nombres de la alineacion, por su numero. `none` es la que no se escribe:
+// la de empezar, que es la de una hoja de calculo.
+static const char *align_name(int align) {
+    if (align == ALIGN_LEFT) {
+        return "left";
+    }
+
+    if (align == ALIGN_CENTER) {
+        return "center";
+    }
+
+    if (align == ALIGN_RIGHT) {
+        return "right";
+    }
+
+    return NULL;
+}
+
+static int format_is_plain(CellFormat format) {
+    return format.align == ALIGN_DEFAULT && format.bold == 0 && format.underline == 0 &&
+           format.fg == 0 && format.bg == 0;
+}
+
+// La linea de formato de una celda, token por token. Los tokens nunca llevan
+// texto libre, asi que la linea sale de una sola escritura y no hay comillas que
+// escapar.
+static int text_add_format(Text *text, const char *reference, CellFormat format) {
+    char colors[32];
+
+    if (format.fg != 0 && format.bg != 0) {
+        snprintf(colors, sizeof(colors), " fg=%d bg=%d", format.fg, format.bg);
+    } else if (format.fg != 0) {
+        snprintf(colors, sizeof(colors), " fg=%d", format.fg);
+    } else if (format.bg != 0) {
+        snprintf(colors, sizeof(colors), " bg=%d", format.bg);
+    } else {
+        colors[0] = '\0';
+    }
+
+    const char *align = align_name(format.align);
+
+    char line[128];
+    int written = snprintf(line, sizeof(line), "  format %s%s%s%s%s%s\n",
+                           reference,
+                           align != NULL ? " align=" : "",
+                           align != NULL ? align : "",
+                           format.bold != 0 ? " bold" : "",
+                           format.underline != 0 ? " underline" : "",
+                           colors);
+
+    if (written < 0 || (size_t) written >= sizeof(line)) {
+        return 0;
+    }
+
+    return text_add(text, line);
 }
 
 // Escribe el bloque de una hoja: su nombre, donde estaba el cursor y lo deslizado
@@ -158,24 +217,36 @@ static int text_add_sheet(Text *text, CellManager *manager, int index) {
 
     for (size_t i = 0; i < entries.count; i++) {
         const char *content = entries.items[i].content;
+        CellFormat format = entries.items[i].format;
 
-        // Una celda sin contenido no necesita una linea en el archivo.
-        if (content[0] == '\0') {
-            continue;
-        }
+        // Una celda sin contenido y sin formato no necesita una linea.
+        if (content[0] != '\0') {
+            reference = ref_to_string(entries.items[i].x, entries.items[i].y);
 
-        reference = ref_to_string(entries.items[i].x, entries.items[i].y);
+            snprintf(line, sizeof(line), "  cell %s ", reference);
 
-        snprintf(line, sizeof(line), "  cell %s ", reference);
+            if (!text_add(text, line) || !text_add_quoted(text, content) || !text_add(text, "\n")) {
+                free(reference);
+                free(entries.items);
 
-        if (!text_add(text, line) || !text_add_quoted(text, content) || !text_add(text, "\n")) {
+                return 0;
+            }
+
             free(reference);
-            free(entries.items);
-
-            return 0;
         }
 
-        free(reference);
+        if (!format_is_plain(format)) {
+            reference = ref_to_string(entries.items[i].x, entries.items[i].y);
+
+            if (!text_add_format(text, reference, format)) {
+                free(reference);
+                free(entries.items);
+
+                return 0;
+            }
+
+            free(reference);
+        }
     }
 
     free(entries.items);
@@ -314,6 +385,39 @@ static char *read_word(char *at, char *into, size_t size) {
     return at + length;
 }
 
+// El numero de una alineacion por su nombre, o -1 si no es ninguno.
+static int align_by_name(const char *name) {
+    if (strcmp(name, "default") == 0) {
+        return ALIGN_DEFAULT;
+    }
+
+    if (strcmp(name, "left") == 0) {
+        return ALIGN_LEFT;
+    }
+
+    if (strcmp(name, "center") == 0) {
+        return ALIGN_CENTER;
+    }
+
+    if (strcmp(name, "right") == 0) {
+        return ALIGN_RIGHT;
+    }
+
+    return -1;
+}
+
+// El color de un token `fg=3` o `bg=12`, o -1 si no es un numero de la paleta.
+static int color_by_token(const char *token) {
+    char *end = NULL;
+    long value = strtol(token + 3, &end, 10);
+
+    if (end == token + 3 || *end != '\0' || value < 1 || value > 16) {
+        return -1;
+    }
+
+    return (int) value;
+}
+
 // Los campos del documento: cada linea empieza con una palabra que dice que es,
 // y lo demas se lee con los lectores de arriba, que saltan los espacios por su
 // cuenta. Lo que no se reconoce no rompe el archivo: se ignora y se cuenta.
@@ -438,6 +542,78 @@ int document_load(const char *content, CellManager *manager, int *ignored) {
                 ignoredLines++;
             } else {
                 set_cell_content(manager, x, y, cellContent);
+            }
+        } else if (strncmp(at, "format", 6) == 0 && isspace((unsigned char) at[6])) {
+            char reference[32];
+            char *after = read_word(at + 6, reference, sizeof(reference));
+
+            unsigned int x = 0;
+            unsigned int y = 0;
+
+            if (after == NULL || !inSheet || !ref_parse(reference, &x, &y)) {
+                ignoredLines++;
+            } else {
+                // Un formato puede estar puesto en una celda vacia: la celda
+                // aparece para llevarlo.
+                MetaCell *meta = get_or_create_cell(manager, x, y);
+
+                if (meta == NULL) {
+                    ignoredLines++;
+                } else {
+                    CellFormat format = meta->cell.format;
+                    char *cursor = skip_spaces(after);
+                    int bad = 0;
+
+                    while (*cursor != '\0') {
+                        char token[32];
+
+                        cursor = read_word(cursor, token, sizeof(token));
+
+                        if (cursor == NULL) {
+                            bad = 1;
+                            break;
+                        }
+
+                        cursor = skip_spaces(cursor);
+
+                        if (strncmp(token, "align=", 6) == 0) {
+                            int align = align_by_name(token + 6);
+
+                            if (align < 0) {
+                                bad = 1;
+                                break;
+                            }
+
+                            format.align = (unsigned char) align;
+                        } else if (strcmp(token, "bold") == 0) {
+                            format.bold = 1;
+                        } else if (strcmp(token, "underline") == 0) {
+                            format.underline = 1;
+                        } else if (strncmp(token, "fg=", 3) == 0 || strncmp(token, "bg=", 3) == 0) {
+                            int color = color_by_token(token);
+
+                            if (color < 0) {
+                                bad = 1;
+                                break;
+                            }
+
+                            if (token[0] == 'f') {
+                                format.fg = (unsigned char) color;
+                            } else {
+                                format.bg = (unsigned char) color;
+                            }
+                        } else {
+                            bad = 1;
+                            break;
+                        }
+                    }
+
+                    if (bad) {
+                        ignoredLines++;
+                    } else {
+                        set_cell_format(meta, format);
+                    }
+                }
             }
         } else if (strncmp(at, "select", 6) == 0 && inSheet) {
             char reference[32];

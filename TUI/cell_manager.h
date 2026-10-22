@@ -158,6 +158,15 @@ int pan_frames(int dx, int dy);
 // limites no se sale.
 void set_cell_size(int width, int height);
 
+// El formato de la celda del cursor, para cambiarlo. Devuelve NULL si no hay
+// sitio para la celda.
+CellFormat *cursor_format(CellManager *manager);
+
+// Cuanto se corre una linea de `lineLength` caracteres dentro de una celda, con
+// la alineacion pedida y el texto de la celda entero por delante (es el texto el
+// que decide cuando la alineacion es la de empezar).
+int align_pad(int align, const char *text, int lineLength);
+
 // Olvida lo que habia en la pantalla, para que lo siguiente se pinte entero.
 void invalidate_screen(void);
 

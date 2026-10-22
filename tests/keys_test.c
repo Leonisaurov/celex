@@ -98,10 +98,14 @@ static char *draw(CellManager *manager) {
 
     dup2(fileno(file), fileno(stdout));
 
-    // Se dibuja dos veces: la primera dibuja todo y la segunda solo lo que
-    // cambio, que es lo que se ve en la pantalla de verdad. La barra de estado
-    // se dibuja tambien, porque es donde se ven los avisos y lo que ofrece el
-    // tabulador.
+    // Se dibuja desde una pantalla en blanco, y dos veces: la primera pinta todo
+    // y la segunda solo lo que cambio, que es lo que se ve en la pantalla de
+    // verdad. Empezar de cero es lo que hace que lo que se mire sea siempre la
+    // pantalla entera, y no lo que cambio desde la prueba de antes. La barra de
+    // estado se dibuja tambien, porque es donde se ven los avisos y lo que ofrece
+    // el tabulador.
+    invalidate_screen();
+
     print_cell_manager(manager);
     print_status(manager, "NORMAL", NULL);
     print_cell_manager(manager);
@@ -322,6 +326,78 @@ int main(void) {
     check(strcmp(theme_name(), first) == 0, "los temas dan la vuelta y vuelven al primero");
 
     free_cell_manager(&themed);
+
+    // El formato de la celda, por teclado: cada tecla hace una cosa, y la
+    // alineacion da la vuelta.
+    CellManager styled = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    Editor styledEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+
+    set_cell_content(&styled, 0, 0, "42");
+    sheet_state(&styled)->cursor.x = 0;
+    sheet_state(&styled)->cursor.y = 0;
+
+    handle_key(&styledEditor, &styled, KEY_CTRL_B);
+    check(cell_format(get_cell(&styled, 0, 0)).bold == 1, "el Ctrl+B pone la negrita");
+    check_message(&styled, "bold on", "la barra dice lo que se ha hecho");
+
+    handle_key(&styledEditor, &styled, KEY_CTRL_B);
+    check(cell_format(get_cell(&styled, 0, 0)).bold == 0, "el Ctrl+B la quita");
+
+    handle_key(&styledEditor, &styled, KEY_CTRL_U);
+    check(cell_format(get_cell(&styled, 0, 0)).underline == 1, "el Ctrl+U subraya");
+
+    handle_key(&styledEditor, &styled, KEY_CTRL_O);
+    check(cell_format(get_cell(&styled, 0, 0)).align == ALIGN_LEFT, "el Ctrl+O alinea a la izquierda");
+    check_message(&styled, "align left", "la barra dice la alineacion que esta puesta");
+
+    handle_key(&styledEditor, &styled, KEY_CTRL_O);
+    check(cell_format(get_cell(&styled, 0, 0)).align == ALIGN_CENTER, "otra vez, en el centro");
+
+    handle_key(&styledEditor, &styled, KEY_CTRL_O);
+    check(cell_format(get_cell(&styled, 0, 0)).align == ALIGN_RIGHT, "y a la derecha");
+
+    handle_key(&styledEditor, &styled, KEY_CTRL_O);
+    check(cell_format(get_cell(&styled, 0, 0)).align == ALIGN_DEFAULT, "y da la vuelta al sitio de empezar");
+
+    // Dar formato a un sitio vacio hace que la celda exista, y cuenta como un
+    // cambio de la hoja: si no, el archivo no se guardaria despues de formatear.
+    sheet_state(&styled)->cursor.x = 5;
+    sheet_state(&styled)->cursor.y = 5;
+    sheet_state(&styled)->dirty = false;
+
+    handle_key(&styledEditor, &styled, KEY_CTRL_B);
+    check(get_cell(&styled, 5, 5) != NULL, "el formato cabe en una celda vacia");
+    check(sheet_state(&styled)->dirty, "y formatear cuenta como un cambio de la hoja");
+
+    free_cell_manager(&styled);
+
+    // Como se pinta el formato: la negrita, el subrayado y el color sacan su
+    // secuencia; el fuente de la celda no cambia nada.
+    CellManager painted = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    MetaCell *head = get_or_create_cell(&painted, 0, 0);
+
+    set_cell_content(&painted, 0, 0, "total");
+    sheet_state(&painted)->cursor.x = 6;
+    sheet_state(&painted)->cursor.y = 6;
+
+    CellFormat bold = { ALIGN_DEFAULT, 1, 0, 0, 0 };
+    set_cell_format(head, bold);
+
+    screen = draw(&painted);
+    check(screen != NULL && strstr(screen, "\x1b[1m") != NULL, "la negrita se pinta en negrita");
+    check_content(&painted, 0, 0, "total", "y el fuente de la celda no se mueve");
+    free(screen);
+
+    CellFormat colored = { ALIGN_DEFAULT, 0, 1, 3, 0 };
+    set_cell_format(head, colored);
+
+    screen = draw(&painted);
+    // El 3 de la paleta es el verde, que es el 32 de las secuencias.
+    check(screen != NULL && strstr(screen, "\x1b[4m") != NULL, "el subrayado se pinta subrayado");
+    check(screen != NULL && strstr(screen, "\x1b[32m") != NULL, "y el color de la paleta sale por su numero");
+    free(screen);
+
+    free_cell_manager(&painted);
 
     // El autocompletado: el tabulador escribe la palabra del lenguaje que falta,
     // la palabra de la hoja cuando no hay mas que una, y va pasando por las

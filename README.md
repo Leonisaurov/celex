@@ -229,6 +229,9 @@ the keyboard, so a slow frame is a key that answers late.
 | `}` `{`            | taller or shorter cells                   |
 | `Ctrl+R`           | evaluate the sheet                        |
 | `Ctrl+T`           | change the colors of the editor           |
+| `Ctrl+B`           | bold the cell, or un-bold it              |
+| `Ctrl+U`           | underline the cell, or take it away       |
+| `Ctrl+O`           | where the text of the cell sits            |
 | `Ctrl+N` `Ctrl+P`  | the next sheet, the previous one          |
 | `Ctrl+A`           | add a sheet after the one being seen      |
 | `Ctrl+D`           | remove the sheet being seen               |
@@ -319,6 +322,24 @@ style it is drawn with, and only the cells whose character or style changed are
 written again. Two styles that paint the same thing are written as one sequence,
 which is what keeps a frame with no color as small as it was before the colors
 existed.
+
+A cell can also be dressed on its own, over whatever the theme says: `Ctrl+B`
+turns its bold on and off, `Ctrl+U` its underline, and `Ctrl+O` moves where its
+text sits — left, center, right, and back to what a spreadsheet does by itself,
+which is numbers to the right and everything else to the left. The bar says which
+of those was set. It is a layer over the cell and not part of it: the source of
+the cell stays the same, the language never sees a format, and the `.cle` exports
+without them. Formats live in the `.clex`, one line per cell that has them:
+
+```
+  cell B4 "A1 + 2"
+  format B4 align=right bold fg=3
+```
+
+The tokens are the same words the bar says, and a color is a number of the
+palette, from 1 to 16, where not putting one is the color of the theme. A cell
+with no format has no line. A format on an empty cell is allowed, so a table can
+be colored before it is filled.
 
 The file has sheets, and the sheets have their own row of tabs above the status
 bar. `Ctrl+A` puts a new sheet after the one being seen, `Ctrl+N` and `Ctrl+P`
@@ -465,6 +486,7 @@ sheet "numeros"
   cell A1 "1"
   cell B1 "A1 + A2"
   cell C1 "\"hola\""
+  format C1 align=center bold fg=3
 end-sheet
 sheet "gastos"
   select A1

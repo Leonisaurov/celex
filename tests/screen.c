@@ -525,9 +525,13 @@ int main(int argc, char **argv) {
 
     temp_path(outPath, sizeof(outPath), ".out");
 
-    // La hoja: si no se paso ninguna, se copia la que se nombro.
+    // La hoja: si no se paso ninguna, se copia la que se nombro. La copia lleva
+    // la extension de la original, para que un documento siga siendo un
+    // documento cuando el editor lo abre por su cuenta.
     char sheetCopy[512];
-    temp_path(sheetCopy, sizeof(sheetCopy), ".cle");
+    const char *extension = strrchr(sheet, '.');
+
+    temp_path(sheetCopy, sizeof(sheetCopy), extension != NULL ? extension : ".cle");
 
     size_t sheetLength = 0;
     char *sheetText = read_file(sheet, &sheetLength);

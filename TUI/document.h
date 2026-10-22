@@ -16,6 +16,7 @@
 //     scroll 0 0
 //     cell A1 "1"
 //     cell B1 "A1 + A2"
+//     format B1 align=right bold
 //   end-sheet
 //   sheet "gastos"
 //     select B2
@@ -25,6 +26,9 @@
 // - Lo que va entre comillas lleva el texto escapado: la comilla se escribe \"
 //   y la barra \". El contenido de una celda es siempre una linea, sin saltos.
 // - Una linea, una cosa. No hay dos campos en la misma linea.
+// - El formato va en su linea, token por token, y solo con palabras: la
+//   alineacion (`align=left`, `center`, `right`), `bold`, `underline` y los
+//   colores de la paleta (`fg=3`, `bg=12`). Lo que no se escribe es el tema.
 // - Lo que no se reconoce se ignora y se cuenta, para que un archivo de una
 //   version futura no deje de abrirse por tener un campo nuevo.
 // - El numero que sigue a celex-document es la version del formato.

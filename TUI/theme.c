@@ -1,6 +1,7 @@
 #include "theme.h"
 
 #include <stddef.h>
+#include <stdlib.h>
 #include <string.h>
 
 // Apagar lo que hubiera: es el principio de toda secuencia de estilo, y lo que
@@ -61,18 +62,67 @@ static const int themeCount = (int) (sizeof(themes) / sizeof(themes[0]));
 
 static int current = 0;
 
+// Los estilos que pone el formato de una celda, despues de los del tema. Se
+// guardan para siempre: el fotograma tiene números de estilo, y un numero tiene
+// que significar lo mismo en el fotograma de ahora y en el de antes.
+#define CUSTOM_MAX 64
+
+static char *custom[CUSTOM_MAX];
+static int customCount = 0;
+
 const char *theme_name(void) {
     return themes[current].name;
 }
 
-const char *style_sequence(ScreenStyle style) {
-    if (style < 0 || style >= STYLE_COUNT) {
+const char *style_sequence(int style) {
+    if (style < 0) {
         return RESET;
+    }
+
+    if (style >= STYLE_COUNT) {
+        int slot = style - STYLE_COUNT;
+
+        return slot < customCount && custom[slot] != NULL ? custom[slot] : RESET;
     }
 
     const char *sequence = themes[current].sequences[style];
 
     return sequence != NULL ? sequence : RESET;
+}
+
+int style_custom(const char *sequence) {
+    if (sequence == NULL || sequence[0] == '\0') {
+        return STYLE_TEXT;
+    }
+
+    for (int i = 0; i < customCount; i++) {
+        if (strcmp(custom[i], sequence) == 0) {
+            return STYLE_COUNT + i;
+        }
+    }
+
+    if (customCount >= CUSTOM_MAX) {
+        return STYLE_TEXT;
+    }
+
+    custom[customCount] = (char *) malloc(strlen(sequence) + 1);
+
+    if (custom[customCount] == NULL) {
+        return STYLE_TEXT;
+    }
+
+    strcpy(custom[customCount], sequence);
+
+    return STYLE_COUNT + customCount++;
+}
+
+void theme_reset_custom(void) {
+    for (int i = 0; i < customCount; i++) {
+        free(custom[i]);
+        custom[i] = NULL;
+    }
+
+    customCount = 0;
 }
 
 const char *theme_next(void) {
@@ -81,6 +131,8 @@ const char *theme_next(void) {
     if (current >= themeCount) {
         current = 0;
     }
+
+    theme_reset_custom();
 
     return themes[current].name;
 }
@@ -93,6 +145,7 @@ int theme_set_by_name(const char *name) {
     for (int i = 0; i < themeCount; i++) {
         if (strcmp(themes[i].name, name) == 0) {
             current = i;
+            theme_reset_custom();
 
             return 1;
         }

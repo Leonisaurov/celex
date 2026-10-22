@@ -9,8 +9,8 @@ int cellHeight = 2;
 
 Cell new_cell() {
     Cell cell;
-    cell.content = NULL;
-    cell.value = NULL;
+
+    memset(&cell, 0, sizeof(cell));
 
     return cell;
 }
@@ -119,4 +119,26 @@ const char *cell_value(MetaCell *meta) {
     }
 
     return meta->cell.value;
+}
+
+// El formato de una celda. Una celda que no existe no tiene formato: el de
+// empezar.
+CellFormat cell_format(MetaCell *meta) {
+    if (meta == NULL) {
+        CellFormat none;
+
+        memset(&none, 0, sizeof(none));
+
+        return none;
+    }
+
+    return meta->cell.format;
+}
+
+void set_cell_format(MetaCell *meta, CellFormat format) {
+    if (meta == NULL) {
+        return;
+    }
+
+    meta->cell.format = format;
 }
