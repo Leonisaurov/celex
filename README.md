@@ -147,9 +147,17 @@ always match the content of the cells. While a cell is being edited, that
 cell shows its source, since that is what is being written; the rest of the
 cells keep showing their values.
 
-`Ctrl+C` copies the content of the cell under the cursor, and `Ctrl+V` pastes
-it into the cell under the cursor, replacing its content. While a cell is
-being edited, the pasted text goes in where the text cursor is.
+`Ctrl+C` copies the cell under the cursor, and `Ctrl+V` pastes it into the
+cell under the cursor, replacing its content. The copied cell keeps both its
+formula and its result: pasted into a cell, the formula goes in; pasted while
+a cell is being edited, the result goes in where the text cursor is.
+
+When the values are being shown, the cell under the cursor always shows its
+source instead of its value, so the formula of that cell is always visible.
+
+The status bar starts with the number of the build, so it is always clear
+which binary is being used. It is the commit of the repository, with a `+`
+when there are changes that were not committed.
 
 The clipboard is the one of the editor, so it works the same on every
 system. If the sheet has changes that were not saved, `q` asks for a

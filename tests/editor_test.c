@@ -127,6 +127,27 @@ int main(void) {
     undo_edit(&manager);
     check_value(&manager, 5, 5, "", "el valor se invalida al deshacer");
 
+    // Pegar dentro de una celda pega el resultado, no la formula.
+    set_cell_content(&manager, 6, 6, "A1 + 2");
+    set_cell_value(&manager, 6, 6, "3");
+    copy_cell_content(&manager, 6, 6);
+
+    manager.cursor.x = 7;
+    manager.cursor.y = 7;
+    manager.editOffset = 0;
+    paste_cell_text(&manager, 7, 7);
+    check_content(&manager, 7, 7, "3", "pegar dentro de una celda pega el resultado");
+
+    // Si la celda copiada no tiene valor, se pega su contenido.
+    set_cell_content(&manager, 8, 8, "sin valor");
+    copy_cell_content(&manager, 8, 8);
+
+    manager.cursor.x = 9;
+    manager.cursor.y = 9;
+    manager.editOffset = 0;
+    paste_cell_text(&manager, 9, 9);
+    check_content(&manager, 9, 9, "sin valor", "pegar una celda sin valor pega su contenido");
+
     free_cell_manager(&manager);
 
     // La hoja se evalua celda a celda: una celda que no se puede calcular no

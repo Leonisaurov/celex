@@ -9,6 +9,7 @@
 
 #include "cell.h"
 #include "ref.h"
+#include "version.h"
 
 // El fotograma anterior, para redibujar solo lo que cambio.
 static void free_previous(void);
@@ -413,22 +414,32 @@ bool can_redo(CellManager *manager) {
 }
 
 // El portapapeles del editor. Es propio, para que funcione igual en los dos
-// sistemas.
+// sistemas. Guarda el contenido de la celda (su formula) y su valor (el
+// resultado de evaluarla), porque al pegar dentro de una celda lo que se
+// quiere es el resultado.
 static char* clipboard = NULL;
+static char* clipboard_value = NULL;
 
-static void clipboard_set(const char* text) {
+static void clipboard_set(const char* text, const char* value) {
     char* copy = duplicate_text(text);
+    char* copy_value = duplicate_text(value);
 
     if (copy == NULL) {
+        free(copy_value);
         return;
     }
 
     free(clipboard);
+    free(clipboard_value);
+
     clipboard = copy;
+    clipboard_value = copy_value;
 }
 
 void copy_cell_content(CellManager *manager, unsigned int x, unsigned int y) {
-    clipboard_set(content_of(manager, x, y));
+    MetaCell* meta = get_cell(manager, x, y);
+
+    clipboard_set(cell_content(meta), cell_value(meta));
 }
 
 bool has_clipboard(void) {
@@ -440,6 +451,7 @@ void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y) {
         return;
     }
 
+    // En una celda se pega la formula entera.
     edit_cell_content(manager, x, y, clipboard);
 }
 
@@ -448,16 +460,20 @@ void paste_cell_text(CellManager *manager, unsigned int x, unsigned int y) {
         return;
     }
 
-    MetaCell *meta = get_or_create_cell(manager, x, y);
+    MetaCell* meta = get_or_create_cell(manager, x, y);
     if (meta == NULL) {
         return;
     }
 
-    char *old = duplicate_text(cell_content(meta));
+    // Dentro de una celda se pega el resultado, que es lo que se quiere
+    // escribir. Si la celda copiada no tenia valor, se pega su formula.
+    const char* text = clipboard_value != NULL && clipboard_value[0] != '\0' ? clipboard_value : clipboard;
+
+    char* old = duplicate_text(cell_content(meta));
 
     // El texto entra donde esta el cursor de la celda.
-    insert_cell_text(meta, manager->editOffset, clipboard, strlen(clipboard));
-    manager->editOffset += strlen(clipboard);
+    insert_cell_text(meta, manager->editOffset, text, strlen(text));
+    manager->editOffset += strlen(text);
 
     record_change(manager, x, y, old);
 
@@ -533,6 +549,11 @@ void free_cell_manager(CellManager *manager) {
     if (clipboard != NULL) {
         free(clipboard);
         clipboard = NULL;
+    }
+
+    if (clipboard_value != NULL) {
+        free(clipboard_value);
+        clipboard_value = NULL;
     }
 
     free_previous();
@@ -874,10 +895,14 @@ void print_cell_manager(CellManager *manager) {
                 continue;
             }
 
+            bool is_cursor = manager->editing && x == manager->cursor.x && y == manager->cursor.y;
+            bool is_selected = x == manager->cursor.x && y == manager->cursor.y;
+
             const char *content = cell_content(meta);
-            // Mientras se esta editando se ve el fuente, que es lo que se
-            // esta escribiendo. El valor va por detras.
-            if (manager->showValues && !manager->editing) {
+            // La celda del cursor enseña su fuente y no su valor: asi se ve la
+            // formula que tiene, y no solo el resultado. Mientras se edita, lo
+            // que se ve es siempre lo que se esta escribiendo.
+            if (manager->showValues && !is_cursor && !is_selected) {
                 content = cell_value(meta);
             }
 
@@ -887,8 +912,6 @@ void print_cell_manager(CellManager *manager) {
 
             int base_x = HEADER_WIDTH + column * STRIDE_X + 1;
             int base_y = HEADER_HEIGHT + row * STRIDE_Y + 1;
-
-            bool is_cursor = manager->editing && x == manager->cursor.x && y == manager->cursor.y;
 
             // Si el texto no cabe, se ve la parte donde esta el cursor.
             size_t total = char_count(content);
@@ -1088,6 +1111,9 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     status[0] = '\0';
 
     append_text(status, sizeof(status), " ");
+    // Con que compilacion se esta trabajando.
+    append_padded(status, sizeof(status), CELEX_BUILD, 8);
+    append_text(status, sizeof(status), "  ");
     append_text(status, sizeof(status), ref);
     append_text(status, sizeof(status), "  ");
     append_padded(status, sizeof(status), mode, 6);

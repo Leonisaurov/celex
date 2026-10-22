@@ -20,12 +20,23 @@ COMMON_SOURCES = $(wildcard $(COMMON)/*.c)
 # editor (TUI) solo habla con la capa de modulo.
 SHARED_SOURCES = $(filter-out $(COMMON)/fileread.c,$(COMMON_SOURCES)) $(filter-out Sheet/cli.c,$(SHEET_SOURCES)) $(LANG_SOURCES)
 
-INCLUDES = -I$(COMMON) -ISheet -ILang
+INCLUDES = -I$(COMMON) -ISheet -ILang -I$(BUILD)
 
 TUI = $(BUILD)/celex
 SCRIPT = $(BUILD)/celexs
 RUNNER = $(BUILD)/runner
 EDITOR_TEST = $(BUILD)/editor_test
+
+# El numero de compilacion va en la barra del editor, para saber siempre con
+# que binario se esta trabajando.
+VERSION_HEADER = $(BUILD)/version.h
+
+.PHONY: FORCE
+$(VERSION_HEADER): FORCE
+	mkdir -p $(BUILD)
+	@id="$$(git rev-parse --short HEAD 2>/dev/null || echo dev)"; \
+	if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then id="$$id+"; fi; \
+	printf '// Generado: no editar.\n#define CELEX_BUILD "%s"\n' "$$id" > $@
 
 # Las pruebas de edicion usan el gestor de celdas, pero no el programa.
 EDITOR_SOURCES = $(filter-out TUI/main.c,$(TUI_SOURCES))
@@ -40,7 +51,7 @@ tui: $(TUI)
 
 script: $(SCRIPT)
 
-$(TUI): $(TUI_SOURCES) $(SHARED_SOURCES)
+$(TUI): $(TUI_SOURCES) $(SHARED_SOURCES) $(VERSION_HEADER)
 	mkdir -p $(BUILD)
 	$(CC) $(TUI_SOURCES) $(SHARED_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES)
 
@@ -52,7 +63,7 @@ $(RUNNER): tests/runner.c
 	mkdir -p $(BUILD)
 	$(CC) tests/runner.c -o $@ $(CFLAGS) $(SANITIZE)
 
-$(EDITOR_TEST): tests/editor_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES)
+$(EDITOR_TEST): tests/editor_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES) $(VERSION_HEADER)
 	mkdir -p $(BUILD)
 	$(CC) tests/editor_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES) -ITUI
 

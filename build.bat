@@ -51,9 +51,22 @@ if "%MODE%"=="debug" (
 
 if not exist build\obj mkdir build\obj
 
+rem El numero de compilacion va en la barra del editor, para saber siempre con
+rem que binario se esta trabajando.
+set "BUILD_ID="
+for /f "usebackq tokens=*" %%i in (`git rev-parse --short HEAD 2^>nul`) do set "BUILD_ID=%%i"
+if not defined BUILD_ID set "BUILD_ID=dev"
+rem Si hay cambios sin commitear, se marca con un mas.
+set "DIRTY="
+for /f "usebackq tokens=*" %%i in (`git status --porcelain 2^>nul`) do set "DIRTY=1"
+if defined DIRTY set "BUILD_ID=%BUILD_ID%+"
+>build\version.h echo // Generado: no editar.
+>>build\version.h echo #define CELEX_BUILD "%BUILD_ID%"
+echo Compilacion: %BUILD_ID%
+
 rem /utf-8 porque los fuentes estan en UTF-8, con los acentos y los
 rem caracteres de la caja.
-set "CFLAGS=/nologo /std:c11 /W3 /utf-8 /D_CRT_SECURE_NO_WARNINGS /ICommon /ISheet /ILang %OPT%"
+set "CFLAGS=/nologo /std:c11 /W3 /utf-8 /D_CRT_SECURE_NO_WARNINGS /ICommon /ISheet /ILang /Ibuild %OPT%"
 
 rem El editor: TUI, la hoja y el lenguaje (sin el interprete).
 echo Compilando el editor...
