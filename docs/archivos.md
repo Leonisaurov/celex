@@ -160,3 +160,11 @@ ignoradas), y salen solo si el `.cle` se exporta desde un editor que las tenía.
 
 Por eso son dos archivos: `Ctrl+E` enseña el guion limpio para editarlo a mano o
 para correrlo con `celexs`, y `Ctrl+S` guarda la hoja de trabajo entera.
+
+## Donde encaja con lo demas
+
+- Lo que es un `.cle` para el lenguaje: [lenguaje.md](lenguaje.md).
+- Los campos del formato que escribe la linea `format`: [temas-y-formatos.md](temas-y-formatos.md).
+- Que tecla escribe que fichero, y que dice la barra al hacerlo: [teclas-y-raton.md](teclas-y-raton.md).
+
+Volver al indice: [docs/README.md](README.md).

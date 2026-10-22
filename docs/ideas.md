@@ -137,3 +137,5 @@ editor; es limpieza, y cada una merece su commit:
   dicho en ningun sitio: en 80 columnas son diez, y `value`, `sheet` y `theme`
   esperan pantalla mas ancha. Si la lista crece, merece la pena pensar en dos filas
   o en un boton de mas, en vez de dejar botones invisibles.
+
+Volver al indice: [docs/README.md](README.md).

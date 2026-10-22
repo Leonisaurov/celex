@@ -166,3 +166,10 @@ docs: contar como habla el editor con la terminal
 Alcances que se usan: `tui`, `sheet`, `lang`, `lenguaje`. Los `docs:` van sin
 alcance. El cuerpo cuenta el porqué de un cambio que no se ve en el título, con
 las medidas cuando las hay.
+
+## Donde encaja con lo demas
+
+- Las pruebas de lo que se compila: [pruebas.md](pruebas.md).
+- Como esta repartida la pantalla y por que se pinta como se pinta: [pantalla.md](pantalla.md).
+
+Volver al indice: [docs/README.md](README.md).

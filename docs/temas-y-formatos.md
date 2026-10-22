@@ -158,3 +158,11 @@ de ahí que cambiar de tema redibuje la pantalla entera. Si alguna vez se llenan
 64 sitios, las celdas de más se pintan con el estilo del texto: no se pierde nada,
 pero ese formato deja de notarse. Es muy difícil de alcanzar: hacen falta 64
 combinaciones distintas de negrita, subrayado y dos colores en la misma pantalla.
+
+## Donde encaja con lo demas
+
+- Donde se guarda cada formato, ficha a ficha: [archivos.md](archivos.md).
+- Por que el fotograma guarda numeros de estilo y que eso obliga a redibujar: [pantalla.md](pantalla.md).
+- Las teclas del formato y los botones de la fila: [teclas-y-raton.md](teclas-y-raton.md).
+
+Volver al indice: [docs/README.md](README.md).

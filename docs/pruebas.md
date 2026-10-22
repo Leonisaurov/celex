@@ -121,3 +121,11 @@ siempre-planos los fotogramas del deslizamiento, aceptar colores fuera de la
 paleta, borrar el dibujo de la fila de herramientas, o hacer que el sitio del
 nombre del archivo conteste siempre sí y siempre no. Si la prueba sigue pasando, la
 prueba no decía nada.
+
+## Donde encaja con lo demas
+
+- Como se compila cada binario de prueba y con que: [organizacion.md](organizacion.md).
+- Lo que miran `screen` y `bench`, que sale de ese pintado: [pantalla.md](pantalla.md).
+- Que comprueba cada grupo: las cuatro pruebas del editor estan partidas por tema en [teclas-y-raton.md](teclas-y-raton.md), [hojas-historial-y-entrada.md](hojas-historial-y-entrada.md) y [archivos.md](archivos.md).
+
+Volver al indice: [docs/README.md](README.md).

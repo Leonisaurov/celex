@@ -28,6 +28,8 @@ Spanish like the code comments:
 
 ## Layout
 
+The reference for every file, both builds and the commit style: [`docs/organizacion.md`](docs/organizacion.md).
+
 The editor and the language are separate, and a module layer joins them:
 
 ```
@@ -76,6 +78,8 @@ functions that are underneath. That is the only way to be sure that a
 change does what it looks like it does.
 
 ## Build
+
+What each build produces, the flags, and where the build number comes from: [`docs/organizacion.md`](docs/organizacion.md).
 
 ```sh
 make build
@@ -141,6 +145,8 @@ The `build` directory is shared by both systems, so `make clean` and
 `build.bat clean` remove the binaries of the two of them.
 
 ## Tests
+
+What every test binary checks, and the format of an expected file: [`docs/pruebas.md`](docs/pruebas.md).
 
 The cases of the language and of the sheet are in `tests`:
 
@@ -227,6 +233,8 @@ takes and how much it writes. While the editor is drawing it is not looking at
 the keyboard, so a slow frame is a key that answers late.
 
 ## Keys
+
+The same table with the codes and every click, plus the row of tools: [`docs/teclas-y-raton.md`](docs/teclas-y-raton.md).
 
 | Key                | Action                                    |
 |--------------------|-------------------------------------------|
@@ -435,6 +443,8 @@ away.
 
 ## The terminal
 
+How the screen is laid out, and why only what changed gets written: [`docs/pantalla.md`](docs/pantalla.md).
+
 The editor talks to the terminal as a stream of bytes, and the same on every
 system. `TUI/tui_platform.c` reads the bytes — from `termios` on POSIX
 and from the events of the console of Win32 on Windows — and `TUI/input.c`
@@ -477,6 +487,8 @@ Linux.
   editor. With `Esc`, or with a click, the selection goes away and the
   `Ctrl+C` copies the cell.
 ## The language
+
+The whole reference, including what the language does not have: [`docs/lenguaje.md`](docs/lenguaje.md).
 
 ```
 # Una hoja: cada linea asigna el valor de una celda
@@ -521,6 +533,8 @@ while total < 100 {
 - The numbers are integers for now.
 
 ## Two files
+
+The `.clex` grammar field by field, and what is lost on each trip: [`docs/archivos.md`](docs/archivos.md).
 
 The editor and the language each have their own file, so neither gets in the way
 of the other:
@@ -597,6 +611,8 @@ C1 = "hola"
   status bar warns about them.
 
 ## Evaluating the sheet
+
+How the sheet is computed cell by cell, and where the program prints to: [`docs/lenguaje.md`](docs/lenguaje.md).
 
 `Ctrl+R` takes the sheet, hands it to the module and fills every cell with
 the value that the language calculates:

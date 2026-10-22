@@ -159,3 +159,11 @@ botones de la fila de herramientas, las pestañas y el nombre del archivo. Todo 
 demás se hace con las teclas de arriba. Lo que la barra dice es el menú de
 resultados: `saved`, `copied D12`, `tools off`, `align center`, `4x2`, `VAL` o
 `SRC`, y el número de compilación con el que se está trabajando.
+
+## Donde encaja con lo demas
+
+- Donde esta cada barra y cuanto mide: [pantalla.md](pantalla.md).
+- Lo que hacen `Ctrl+S` y `Ctrl+E` sobre los ficheros: [archivos.md](archivos.md).
+- Lo que hace cada tecla de formato: [temas-y-formatos.md](temas-y-formatos.md).
+
+Volver al indice: [docs/README.md](README.md).

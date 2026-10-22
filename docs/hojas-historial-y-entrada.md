@@ -138,3 +138,11 @@ seleccionada.
 El contenido de una celda no tiene tope de longitud. El único tope al escribir es
 el del archivo: al cargar un documento cada fuente cabe en 1023 caracteres, y lo que
 pasa de ahí se corta en silencio.
+
+## Donde encaja con lo demas
+
+- Que se guarda de cada hoja y que se queda fuera: [archivos.md](archivos.md).
+- Las teclas de hoja y de portapapeles, y los clics en las pestanas: [teclas-y-raton.md](teclas-y-raton.md).
+- Como se pinta la fila de las pestanas y cuanto cabe: [pantalla.md](pantalla.md).
+
+Volver al indice: [docs/README.md](README.md).

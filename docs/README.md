@@ -42,3 +42,12 @@ Los comentarios del código, las pruebas y esta documentación van en español; 
 mensajes que ve el usuario en la pantalla van en inglés (`saved`, `copied A1`,
 `tools off`), porque son strings de la interfaz. Cuando un documento cita un
 mensaje, lo cita tal cual, en inglés.
+
+## Por donde empezar
+
+- Acabar de arrancar, compilar y probar: el [README de la raiz](../README.md), que ademas enlaza la referencia de cada seccion.
+- Usar el editor sin saberse las teclas: [teclas-y-raton.md](teclas-y-raton.md).
+- Entender un archivo ajeno, o escribirlo a mano: [archivos.md](archivos.md) y [lenguaje.md](lenguaje.md).
+- Arreglar o anadir algo al codigo: [organizacion.md](organizacion.md) para saber donde, y [pruebas.md](pruebas.md) para comprobarlo.
+
+Cada documento termina diciendo donde encaja con los demas, y todos vuelven aqui.

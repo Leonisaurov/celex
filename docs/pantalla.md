@@ -158,3 +158,11 @@ pinta, no se corta. Cada botón es una tecla escrita; ver
 El bucle mira el tamaño en cada vuelta; si cambió, se olvida el fotograma, se
 limpia la pantalla y se pinta todo entero, incluidas las tres barras
 (`TUI/cell_manager.c:1772-1783`).
+
+## Donde encaja con lo demas
+
+- Las teclas y los clics que cambian cada una de esas partes: [teclas-y-raton.md](teclas-y-raton.md).
+- Los estilos que lleva cada celda del fotograma: [temas-y-formatos.md](temas-y-formatos.md).
+- Donde se guarda el tamano de celda y la fila de herramientas: [archivos.md](archivos.md).
+
+Volver al indice: [docs/README.md](README.md).

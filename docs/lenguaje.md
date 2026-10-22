@@ -188,3 +188,11 @@ esperada está en `tests/expected/lenguaje.txt`: aritmética y su prioridad, cad
 con rango, celdas en desorden que se resuelven, sentencias con `;`, `input` sin
 teclado y `return` parando el programa. Es a la vez la prueba del intérprete y la
 especie de manual escrito en el propio lenguaje.
+
+## Donde encaja con lo demas
+
+- Como se escribe ese programa en un archivo: [archivos.md](archivos.md).
+- Los casos que recorren el lenguaje y como se comparan: [pruebas.md](pruebas.md).
+- Lo que hace el editor con los valores que devuelve: [hojas-historial-y-entrada.md](hojas-historial-y-entrada.md).
+
+Volver al indice: [docs/README.md](README.md).
