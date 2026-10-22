@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 
 // Para mirar el reloj entre los fotogramas del deslizamiento.
 #ifdef _WIN32
@@ -244,10 +245,20 @@ static size_t char_index(const char *text, size_t offset) {
     return count;
 }
 
+// Se quita de en medio la oferta del tabulador: al escribir, borrar o cambiar de
+// celda, la palabra que se estaba completando ya no es la que era.
+static void drop_completion(CellManager *manager) {
+    manager->completion.active = false;
+    manager->completion.list.count = 0;
+    manager->completion.index = 0;
+}
+
 void edit_reset(CellManager *manager) {
     MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
 
     manager->editOffset = strlen(cell_content(meta));
+
+    drop_completion(manager);
 }
 
 void edit_move_cursor(CellManager *manager, int delta) {
@@ -274,6 +285,8 @@ void edit_to_end(CellManager *manager) {
 void edit_insert(CellManager *manager, const char *text, size_t length) {
     MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
 
+    drop_completion(manager);
+
     if (meta == NULL) {
         // La celda todavia no existe: se crea vacia para poder escribir en
         // ella.
@@ -298,6 +311,8 @@ void edit_insert(CellManager *manager, const char *text, size_t length) {
 void edit_backspace(CellManager *manager) {
     MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
 
+    drop_completion(manager);
+
     if (meta == NULL || manager->editOffset == 0) {
         return;
     }
@@ -317,6 +332,8 @@ void edit_backspace(CellManager *manager) {
 void edit_delete(CellManager *manager) {
     MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
 
+    drop_completion(manager);
+
     if (meta == NULL) {
         return;
     }
@@ -335,6 +352,205 @@ void edit_delete(CellManager *manager) {
     record_change(manager, manager->cursor.x, manager->cursor.y, old);
 
     free(old);
+}
+
+// El autocompletado. La palabra que se esta escribiendo es el trozo de letras,
+// numeros y guiones bajos que queda delante del cursor de texto.
+static bool is_word_character(unsigned char character) {
+    return isalnum(character) != 0 || character == '_';
+}
+
+// Donde empieza la palabra que acaba en la posicion pedida.
+static size_t word_start(const char *text, size_t offset) {
+    while (offset > 0 && is_word_character((unsigned char) text[offset - 1])) {
+        offset--;
+    }
+
+    return offset;
+}
+
+// Lo que hay entre dos posiciones del contenido, como palabra suelta.
+static void word_between(const char *text, size_t from, size_t to, char *into, size_t size) {
+    size_t length = to > from ? to - from : 0;
+
+    if (length >= size) {
+        length = size - 1;
+    }
+
+    memcpy(into, text + from, length);
+    into[length] = '\0';
+}
+
+// Lo que se recoge de la hoja para completar: el prefijo que se esta escribiendo
+// y la lista donde guardar lo que empieza igual.
+typedef struct {
+    const char *prefix;
+    CompleteList *list;
+} CompleteCollect;
+
+static int collect_word(void *const context, struct hashmap_element_s *const element) {
+    CompleteCollect *collect = (CompleteCollect *) context;
+    const char *text = cell_content((MetaCell *) element->data);
+
+    size_t i = 0;
+
+    while (text[i] != '\0') {
+        while (text[i] != '\0' && !is_word_character((unsigned char) text[i])) {
+            i++;
+        }
+
+        size_t from = i;
+
+        while (text[i] != '\0' && is_word_character((unsigned char) text[i])) {
+            i++;
+        }
+
+        if (i == from) {
+            continue;
+        }
+
+        char word[COMPLETE_WORD];
+        word_between(text, from, i, word, sizeof(word));
+
+        // Lo que ya esta escrito no se ofrece: no aporta nada.
+        if (strcmp(word, collect->prefix) == 0) {
+            continue;
+        }
+
+        if (complete_starts_with(word, collect->prefix)) {
+            complete_add(collect->list, word);
+        }
+    }
+
+    return 0;
+}
+
+// Las palabras que pueden empezar como la que se esta escribiendo: primero las
+// del lenguaje, que son siempre las mismas, y despues las que ya hay en la hoja.
+static void complete_lookup(CellManager *manager, const char *prefix, CompleteList *list) {
+    list->count = 0;
+
+    if (prefix[0] == '\0') {
+        return;
+    }
+
+    for (int i = 0; i < complete_keyword_count(); i++) {
+        const char *word = complete_keyword(i);
+
+        if (strcmp(word, prefix) != 0 && complete_starts_with(word, prefix)) {
+            complete_add(list, word);
+        }
+    }
+
+    CompleteCollect collect = { prefix, list };
+
+    hashmap_iterate_pairs(&manager->map, collect_word, &collect);
+}
+
+// Cambia la palabra que se esta escribiendo por otra.
+static void complete_replace(CellManager *manager, size_t from, const char *word) {
+    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    const char *text = cell_content(meta);
+
+    char *old = duplicate_text(text);
+
+    delete_cell_text(meta, from, manager->editOffset - from);
+    insert_cell_text(meta, from, word, strlen(word));
+    manager->editOffset = from + strlen(word);
+
+    record_change(manager, manager->cursor.x, manager->cursor.y, old);
+
+    free(old);
+}
+
+void complete_tab(CellManager *manager) {
+    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    const char *text = cell_content(meta);
+
+    Completion *completion = &manager->completion;
+
+    // Sin oferta delante: se busca la palabra y lo que pueda completarse.
+    if (!completion->active) {
+        size_t start = word_start(text, manager->editOffset);
+
+        char prefix[COMPLETE_WORD];
+        word_between(text, start, manager->editOffset, prefix, sizeof(prefix));
+
+        CompleteList list;
+        complete_lookup(manager, prefix, &list);
+
+        if (list.count == 0) {
+            return;
+        }
+
+        strcpy(completion->origin, prefix);
+        completion->start = start;
+        completion->list = list;
+        completion->index = 0;
+
+        // Con una sola candidata no hay que elegir: se escribe y se acaba.
+        if (list.count == 1) {
+            complete_replace(manager, start, list.words[0]);
+            completion->active = false;
+            completion->list.count = 0;
+            return;
+        }
+
+        // Con varias, se escribe lo que todas tienen al principio, que es lo
+        // unico que no puede equivocar. El indice en -1 dice que se esta
+        // mostrando ese trozo, y que el primer tabulador tiene que llevar a la
+        // primera palabra.
+        char common[COMPLETE_WORD];
+        complete_common_prefix(&list, common, sizeof(common));
+
+        if (strcmp(common, prefix) != 0) {
+            complete_replace(manager, start, common);
+        }
+
+        completion->index = -1;
+        completion->active = true;
+
+        return;
+    }
+
+    // Con la oferta delante, el tabulador pasa a la siguiente palabra. Al dar la
+    // vuelta se vuelve a lo que estaba escrito, para poder seguir escribiendo.
+    completion->index++;
+
+    size_t start = completion->start;
+
+    if (completion->index >= completion->list.count) {
+        complete_replace(manager, start, completion->origin);
+        completion->active = false;
+        completion->list.count = 0;
+        completion->index = 0;
+        return;
+    }
+
+    complete_replace(manager, start, completion->list.words[completion->index]);
+}
+
+int completion_text(CellManager *manager, char *into, size_t size) {
+    Completion *completion = &manager->completion;
+
+    into[0] = '\0';
+
+    if (!completion->active) {
+        return 0;
+    }
+
+    for (int i = 0; i < completion->list.count; i++) {
+        size_t length = strlen(into);
+
+        if (length + COMPLETE_WORD + 4 >= size) {
+            break;
+        }
+
+        // La que esta puesta ahora se marca entre llaves.
+        snprintf(into + length, size - length, i == completion->index ? " {%s}" : " %s", completion->list.words[i]);
+    }
+
+    return 1;
 }
 
 // El valor de una celda se invalida cuando su contenido cambia: si no, se
@@ -529,6 +745,12 @@ CellManager new_cell_manager(TermSize size) {
     manager.redo.count = 0;
     manager.redo.capacity = 0;
     clipboard_init(&manager.clipboard);
+
+    manager.completion.active = false;
+    manager.completion.start = 0;
+    manager.completion.origin[0] = '\0';
+    manager.completion.list.count = 0;
+    manager.completion.index = 0;
 
     if (0 != hashmap_create(35, &manager.map)) {
         // TODO! Error Handeling
@@ -800,6 +1022,8 @@ static bool previous_ready = false;
 static char previous_status[MESSAGE_SIZE * 2];
 static char previous_extra[MESSAGE_SIZE * 2];
 static bool previous_status_ready = false;
+// Si la ultima vez se pudo escribir la ruta del archivo al final de la barra.
+static bool previous_path_shown = false;
 
 // Cambia el tamano de las celdas, con los limites puestos.
 void set_cell_size(int width, int height) {
@@ -1334,13 +1558,12 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     // Si se ven los valores o el fuente de las celdas.
     append_padded(status, sizeof(status), manager->showValues ? "VAL" : "SRC", 3);
     append_text(status, sizeof(status), "  ");
-    // El tamano de las celdas, que se cambia con las teclas del corchete.
+    // El tamano de las celdas, que se cambia con las teclas del corchete. El
+    // tema no se pone: la barra va justa de sitio en una pantalla de ochenta
+    // columnas, y el nombre se dice al cambiar.
     char size_text[16];
     snprintf(size_text, sizeof(size_text), "%dx%d", cellWidth, cellHeight);
     append_padded(status, sizeof(status), size_text, 4);
-    append_text(status, sizeof(status), "  ");
-    // El tema puesto, para saber con que colores se esta trabajando.
-    append_padded(status, sizeof(status), theme_name(), 6);
     append_text(status, sizeof(status), "  ");
     // La celda copiada, para saber que hay en el portapapeles.
     char copied[16];
@@ -1357,10 +1580,6 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     }
 
     append_padded(status, sizeof(status), copied, 8);
-    append_text(status, sizeof(status), "  ");
-    append_padded(status, sizeof(status), content, 16);
-    append_text(status, sizeof(status), "  ");
-    append_text(status, sizeof(status), path == NULL ? "[no file]" : path);
 
     free(ref);
 
@@ -1368,47 +1587,84 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     char extra[MESSAGE_SIZE * 2];
     extra[0] = '\0';
 
+    // Lo que ofrece el tabulador tiene prioridad: mientras se completa, es lo
+    // que interesa ver.
+    char offered[MESSAGE_SIZE * 2];
+    bool offering = completion_text(manager, offered, sizeof(offered)) != 0;
+
     if (manager->message[0] != '\0') {
         append_text(extra, sizeof(extra), manager->message);
+    } else if (offering) {
+        append_text(extra, sizeof(extra), offered);
+    } else if (manager->editing) {
+        // Mientras se escribe, la barra deja ver el texto entero: en la rejilla
+        // solo se ve el trozo que cabe en la celda.
+        append_text(extra, sizeof(extra), content);
     } else if (manager->showValues && value[0] != '\0') {
         append_text(extra, sizeof(extra), value);
     }
 
-    // Si la barra no cambio no se redibuja.
-    if (previous_status_ready &&
-        strcmp(status, previous_status) == 0 &&
-        strcmp(extra, previous_extra) == 0) {
-        return;
+    // Si la barra no cambio no se redibuja. Cambia tambien cuando el nombre del
+    // archivo pasa a caber o a no caber, aunque el resto sea igual.
+    int offset = utf8_columns(status) + 1;
+    int extraColumns = utf8_columns(extra);
+
+    // La ruta del archivo va al final de la linea, y solo si cabe despues del
+    // mensaje: el mensaje es lo que pasa, y la ruta es lo que esta. Se pone el
+    // nombre, no la ruta entera, que casi nunca cabe y lo que interesa es ver
+    // que hoja es la que esta abierta.
+    const char *shownPath = path == NULL ? "[no file]" : path;
+    const char *name = shownPath;
+
+    for (const char *at = shownPath; *at != '\0'; at++) {
+        if (*at == '/' || *at == '\\') {
+            name = at + 1;
+        }
     }
 
-    int offset = utf8_columns(status) + 1;
+    int pathColumns = utf8_columns(name);
+    int pathAt = width - pathColumns - 1;
+    bool showPath = pathAt > offset + extraColumns && pathAt < width;
+
+    if (previous_status_ready &&
+        strcmp(status, previous_status) == 0 &&
+        strcmp(extra, previous_extra) == 0 &&
+        showPath == previous_path_shown) {
+        return;
+    }
 
     move_cursor(0, (uint16_t) y);
     fputs(style_sequence(STYLE_STATUS), stdout);
     write_columns(status, width);
 
+    // Un error se pinta como un error, un aviso como un aviso, y el valor de la
+    // celda como los valores de la rejilla.
+    ScreenStyle extraStyle = STYLE_VALUE;
+
+    if (manager->message[0] != '\0') {
+        extraStyle = manager->messageIsError ? STYLE_ERROR : STYLE_MESSAGE;
+    } else if (offering || manager->editing) {
+        extraStyle = STYLE_MESSAGE;
+    }
+
     if (offset < width) {
-        // El valor o el mensaje van encima de la barra, y despues se ponen
-        // espacios para tapar lo que habia antes.
-        int columns = utf8_columns(extra);
+        // El valor o el mensaje van despues de los campos.
         int was = utf8_columns(previous_extra);
 
         move_cursor((uint16_t) offset, (uint16_t) y);
-
-        // Un error se pinta como un error, un aviso como un aviso, y el valor
-        // de la celda como los valores de la rejilla.
-        ScreenStyle extraStyle = STYLE_VALUE;
-
-        if (manager->message[0] != '\0') {
-            extraStyle = manager->messageIsError ? STYLE_ERROR : STYLE_MESSAGE;
-        }
-
         fputs(style_sequence(extraStyle), stdout);
         write_columns(extra, width - offset);
 
-        for (int i = columns; i < was && offset + i < width; i++) {
+        for (int i = extraColumns; i < was && offset + i < width; i++) {
             fputc(' ', stdout);
         }
+    }
+
+    // El nombre del archivo, a la derecha del todo.
+    if (showPath) {
+        move_cursor((uint16_t) pathAt, (uint16_t) y);
+        fputs(style_sequence(STYLE_STATUS), stdout);
+        write_columns(name, width - pathAt);
     }
 
     // Se apaga el ultimo estilo, para que no se quede pegado en la siguiente
@@ -1418,6 +1674,7 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     snprintf(previous_status, sizeof(previous_status), "%s", status);
     snprintf(previous_extra, sizeof(previous_extra), "%s", extra);
     previous_status_ready = true;
+    previous_path_shown = showPath;
 
     flush();
 }

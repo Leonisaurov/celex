@@ -99,9 +99,13 @@ static char *draw(CellManager *manager) {
     dup2(fileno(file), fileno(stdout));
 
     // Se dibuja dos veces: la primera dibuja todo y la segunda solo lo que
-    // cambio, que es lo que se ve en la pantalla de verdad.
+    // cambio, que es lo que se ve en la pantalla de verdad. La barra de estado
+    // se dibuja tambien, porque es donde se ven los avisos y lo que ofrece el
+    // tabulador.
     print_cell_manager(manager);
+    print_status(manager, "NORMAL", NULL);
     print_cell_manager(manager);
+    print_status(manager, "NORMAL", NULL);
 
     fflush(stdout);
 
@@ -318,6 +322,109 @@ int main(void) {
     check(strcmp(theme_name(), first) == 0, "los temas dan la vuelta y vuelven al primero");
 
     free_cell_manager(&themed);
+
+    // El autocompletado: el tabulador escribe la palabra del lenguaje que falta,
+    // la palabra de la hoja cuando no hay mas que una, y va pasando por las
+    // candidatas cuando hay varias que empiezan igual.
+    CellManager completed = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    Editor completedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+
+    set_cell_content(&completed, 0, 0, "123");
+    set_cell_content(&completed, 0, 1, "hola");
+    set_cell_content(&completed, 1, 1, "hombre");
+
+    // Una palabra del lenguaje, que solo puede ser una.
+    completed.cursor.x = 3;
+    completed.cursor.y = 0;
+    handle_key(&completedEditor, &completed, 'i');
+    type_text(&completed, &completedEditor, "pr");
+    handle_key(&completedEditor, &completed, KEY_TAB);
+    check_content(&completed, 3, 0, "print", "el tabulador completa una palabra del lenguaje");
+    handle_key(&completedEditor, &completed, KEY_ESC);
+
+    // Una palabra que ya esta en la hoja, y que tampoco tiene mas que una
+    // candidata.
+    completed.cursor.x = 3;
+    completed.cursor.y = 1;
+    handle_key(&completedEditor, &completed, 'i');
+    type_text(&completed, &completedEditor, "12");
+    handle_key(&completedEditor, &completed, KEY_TAB);
+    check_content(&completed, 3, 1, "123", "el tabulador completa lo que ya hay en la hoja");
+    handle_key(&completedEditor, &completed, KEY_ESC);
+
+    // Dos palabras que empiezan igual: el primer tabulador escribe lo que tienen
+    // comun, y los siguientes van pasando por las candidatas.
+    completed.cursor.x = 3;
+    completed.cursor.y = 2;
+    handle_key(&completedEditor, &completed, 'i');
+    type_text(&completed, &completedEditor, "ho");
+    handle_key(&completedEditor, &completed, KEY_TAB);
+    check_content(&completed, 3, 2, "ho", "lo comun a dos candidatas no cambia nada");
+
+    handle_key(&completedEditor, &completed, KEY_TAB);
+    check_content(&completed, 3, 2, "hola", "el tabulador pone la primera candidata");
+
+    handle_key(&completedEditor, &completed, KEY_TAB);
+    check_content(&completed, 3, 2, "hombre", "el tabulador pasa a la segunda");
+
+    handle_key(&completedEditor, &completed, KEY_TAB);
+    check_content(&completed, 3, 2, "ho", "al dar la vuelta se vuelve a lo escrito");
+    handle_key(&completedEditor, &completed, KEY_ESC);
+
+    // Escribir despues de completar apaga la oferta.
+    completed.cursor.x = 3;
+    completed.cursor.y = 3;
+    handle_key(&completedEditor, &completed, 'i');
+    type_text(&completed, &completedEditor, "pr");
+    handle_key(&completedEditor, &completed, KEY_TAB);
+    type_text(&completed, &completedEditor, "!");
+    check_content(&completed, 3, 3, "print!", "seguir escribiendo despues de completar deja la palabra");
+    check(!completed.completion.active, "escribir apaga la oferta del tabulador");
+    handle_key(&completedEditor, &completed, KEY_ESC);
+
+    // Sin palabra escrita no hay nada que completar.
+    completed.cursor.x = 4;
+    completed.cursor.y = 3;
+    handle_key(&completedEditor, &completed, 'i');
+    handle_key(&completedEditor, &completed, KEY_TAB);
+    check_content(&completed, 4, 3, "", "el tabulador no inventa nada sobre una celda vacia");
+    handle_key(&completedEditor, &completed, KEY_ESC);
+
+    // Con dos candidatas la oferta se queda delante, y se puede escribir lo que
+    // hay entre ellas: es lo que ve quien esta completando.
+    completed.cursor.x = 3;
+    completed.cursor.y = 5;
+    handle_key(&completedEditor, &completed, 'i');
+    type_text(&completed, &completedEditor, "h");
+    handle_key(&completedEditor, &completed, KEY_TAB);
+
+    // Lo unico que "hola" y "hombre" tienen al principio es la o.
+    check_content(&completed, 3, 5, "ho", "el tabulador escribe lo que las candidatas tienen comun");
+    check(completed.completion.active, "con dos candidatas queda la oferta delante");
+
+    char offered[MESSAGE_SIZE * 2];
+    check(completion_text(&completed, offered, sizeof(offered)) == 1, "la oferta se puede escribir");
+    check(strstr(offered, "hola") != NULL && strstr(offered, "hombre") != NULL, "la oferta dice cuales son las candidatas");
+
+    // El orden de la hoja no se promete: solo que al pasar se escribe una de las
+    // dos palabras enteras.
+    handle_key(&completedEditor, &completed, KEY_TAB);
+    const char *chosen = cell_content(get_cell(&completed, 3, 5));
+    check(strcmp(chosen, "hola") == 0 || strcmp(chosen, "hombre") == 0, "el tabulador pasa a una candidata entera");
+
+    // La oferta se ve en la barra: la palabra puesta entre llaves. Las llaves
+    // solo las escribe la oferta, asi que la prueba no puede pasar por otro
+    // sitio.
+    char expected[COMPLETE_WORD + 4];
+    snprintf(expected, sizeof(expected), "{%s}", chosen);
+
+    char *drawing = draw(&completed);
+    check(drawing != NULL && strstr(drawing, expected) != NULL, "la barra enseña la oferta del tabulador");
+    free(drawing);
+
+    handle_key(&completedEditor, &completed, KEY_ESC);
+
+    free_cell_manager(&completed);
 
     free_cell_manager(&empty);
     free_cell_manager(&manager);

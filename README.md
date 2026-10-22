@@ -44,6 +44,7 @@ Inside `TUI/` the editor is in pieces, each one with its own job:
 | `TUI/cell_manager.c` | the sheet, the drawing and the history            |
 | `TUI/clipboard.c`    | the clipboard of the editor, and the one of the system |
 | `TUI/theme.c`        | the colors: what each part of the screen looks like   |
+| `TUI/complete.c`     | the words the tab key can complete                   |
 | `TUI/script.c`       | runs the sheet and fills the cells with their values |
 | `TUI/file.c`         | reads and writes the `.cle` file                  |
 
@@ -193,6 +194,7 @@ the keyboard, so a slow frame is a key that answers late.
 | `i` or `Enter`     | start editing the cell, keeping content   |
 | `←` `→`            | move the text cursor while editing        |
 | `Home` `End`       | move the text cursor to one end or other  |
+| `Tab`              | complete the word being written            |
 | `Backspace`        | delete the character before the cursor    |
 | `Del`              | delete the character at the cursor        |
 | `Esc`              | leave the cell                            |
@@ -213,7 +215,16 @@ the keyboard, so a slow frame is a key that answers late.
 While a cell is being edited the arrows move the text cursor inside it,
 and the cell under the cursor is the one that shows where the text goes.
 If the content does not fit in the cell, the part that is shown is the one
-where the cursor is.
+where the cursor is, and the bar shows the whole text being written.
+
+`Tab` completes the word under way: the words of the language (`print`, `if`,
+`while`, `true`...) and the words already written in the sheet — the references
+of the cells, the names, the numbers. With one candidate it is written and that
+is that. With several, the first `Tab` writes what they all share and the bar
+lists the candidates, so the next `Tab` puts one of them, and the one after that
+the next, until giving another turn goes back to what was written. Typing
+anything else leaves the list, which is what one expects when the word was
+already the right one.
 
 The sheet is evaluated again every time a change is committed, so the values
 always match the content of the cells. While a cell is being edited, that

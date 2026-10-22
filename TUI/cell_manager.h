@@ -2,11 +2,28 @@
 #define CELEX_TUI_CELL_MANAGER
 #include <stdbool.h>
 #include "clipboard.h"
+#include "complete.h"
 #include "hashmap.h"
 #include "tui.h"
 #include "cell.h"
 
 #define MESSAGE_SIZE 128
+
+// Lo que ofrece el tabulador mientras se escribe una palabra en una celda.
+typedef struct {
+    // Si hay una oferta delante. Al escribir o borrar se apaga, porque la
+    // palabra que se esta escribiendo ya no es la que se ofrecio.
+    bool active;
+    // Donde empieza la palabra en el contenido de la celda, en bytes.
+    size_t start;
+    // La palabra que estaba escrita, para volver a ella al dar la vuelta a la
+    // lista.
+    char origin[COMPLETE_WORD];
+    // Las palabras que empiezan igual.
+    CompleteList list;
+    // Cuantas se han ofrecido.
+    int index;
+} Completion;
 
 // Un cambio en el contenido de una celda, para poder deshacerlo.
 typedef struct {
@@ -45,6 +62,8 @@ typedef struct {
     History redo;
     // El portapapeles del editor: lo que se copia y lo que se pega.
     Clipboard clipboard;
+    // Lo que ofrece el tabulador.
+    Completion completion;
 } CellManager;
 
 CellManager new_cell_manager(TermSize size);
@@ -106,5 +125,14 @@ void edit_to_end(CellManager *manager);
 void edit_insert(CellManager *manager, const char *text, size_t length);
 void edit_backspace(CellManager *manager);
 void edit_delete(CellManager *manager);
+
+// El tabulador, mientras se edita: completa la palabra que se esta escribiendo
+// con las del lenguaje y las que ya hay en la hoja, y va pasando por las
+// candidatas si hay mas de una.
+void complete_tab(CellManager *manager);
+
+// Lo que el tabulador esta ofreciendo, escrito en una linea para la barra de
+// estado. Devuelve 0 si no hay nada que ofrecer.
+int completion_text(CellManager *manager, char *into, size_t size);
 
 #endif

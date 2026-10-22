@@ -219,6 +219,11 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
             case KEY_HOME:
                 edit_to_start(manager);
                 break;
+            case KEY_TAB:
+                // El tabulador completa la palabra que se esta escribiendo, y
+                // va pasando por las candidatas.
+                complete_tab(manager);
+                break;
             case KEY_END:
                 edit_to_end(manager);
                 break;
