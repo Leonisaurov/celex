@@ -63,6 +63,10 @@ int sheet_row(int height) {
     return height - STATUS_HEIGHT - SHEET_BAR_HEIGHT;
 }
 
+int status_row(int height) {
+    return height - STATUS_HEIGHT;
+}
+
 // La pantalla se dibuja por columnas, no por bytes: un caracter de la caja
 // ocupa tres bytes en UTF-8 pero una sola columna. Cada celda del buffer
 // guarda un caracter completo (GLYPH_BYTES) y despues el estilo con el que se
@@ -1386,6 +1390,29 @@ static bool previous_status_ready = false;
 // Si la ultima vez se pudo escribir la ruta del archivo al final de la barra.
 static bool previous_path_shown = false;
 
+// De que columna a que columna (sin contar la ultima) se escribio el nombre del
+// archivo en la barra de estado. Se apunta aqui al pintarlo, para que un clic
+// encima caiga justo donde se ve. -1 cuando no esta escrito.
+static int path_first = -1;
+static int path_last = -1;
+
+// Si una columna x de la barra de estado es del nombre del archivo.
+int status_path_at(int x) {
+    return path_first >= 0 && x >= path_first && x < path_last;
+}
+
+// La fila de las herramientas se quita con el Ctrl+K y con su boton, pero el boton
+// se quita con la fila: lo que queda para volver a ponerla es el nombre del
+// archivo de la barra de estado y este chip de la fila de las pestanas, que solo
+// se ve cuando la fila esta quitada.
+#define TOOLS_CHIP "[tools]"
+
+// En que columna de la fila de las pestanas empieza el chip. Deja una de aire al
+// final, como las pestanas.
+int tools_chip_column(int width) {
+    return width - (int) strlen(TOOLS_CHIP) - 1;
+}
+
 // La ultima linea de las pestañas, para no redibujarla si no cambio.
 static char previous_sheets[MESSAGE_SIZE * 4];
 static int previous_sheets_active = -1;
@@ -2097,6 +2124,14 @@ void print_sheets(CellManager *manager) {
         snprintf(joined + length, sizeof(joined) - length, "|*%s", manager->renameText);
     }
 
+    if (!manager->showTools) {
+        size_t length = strlen(joined);
+
+        // El chip de la fila quitada cambia la linea: si no, no se volveria a
+        // pintar cuando se esconde la fila.
+        snprintf(joined + length, sizeof(joined) - length, "|%s", TOOLS_CHIP);
+    }
+
     if (previous_sheets_ready &&
         strcmp(joined, previous_sheets) == 0 &&
         manager->active == previous_sheets_active) {
@@ -2169,6 +2204,16 @@ void print_sheets(CellManager *manager) {
 
     for (; used < width; used++) {
         fputc(' ', stdout);
+    }
+
+    // Con la fila de las herramientas quitada, se escribe el chip al final: es lo
+    // que se ve para volver a traerla. Encima de lo que hubiera, porque con muchas
+    // pestanas la fila puede estar llena.
+    if (!manager->showTools) {
+        move_cursor((uint16_t) tools_chip_column(width), (uint16_t) y);
+        fputs(style_sequence(STYLE_HEADER), stdout);
+        fputs(TOOLS_CHIP, stdout);
+        fputs(style_sequence(STYLE_NONE), stdout);
     }
 
     snprintf(previous_sheets, sizeof(previous_sheets), "%s", joined);
@@ -2403,6 +2448,17 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
         move_cursor((uint16_t) pathAt, (uint16_t) y);
         fputs(style_sequence(STYLE_STATUS), stdout);
         write_columns(name, width - pathAt);
+
+        // Se recuerda su sitio: es el tirador de la fila de las herramientas.
+        path_first = pathAt;
+        path_last = pathAt + pathColumns;
+
+        if (path_last > width) {
+            path_last = width;
+        }
+    } else {
+        path_first = -1;
+        path_last = -1;
     }
 
     // Se apaga el ultimo estilo, para que no se quede pegado en la siguiente

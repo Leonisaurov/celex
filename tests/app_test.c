@@ -482,8 +482,11 @@ int main(int argc, char **argv) {
 
     const char *clickedKeys = "\x1b[<0;17;9M"   // la celda C3
                               "\x1b[<0;9;22M"   // el boton de la negrita
-                              "\x13"            // Ctrl+S: guardar el documento
                               "\x1b[<2;7;3M"    // clic derecho en A1: copiarla
+                              "\x13"            // Ctrl+S: guardar el documento
+                              "\x0b"            // Ctrl+K: quitar la fila
+                              "\x1b[<0;73;23M"  // el chip del final de las pestanas
+                              "\x13"            // Ctrl+S: guardar otra vez
                               "qq";
 
     if (!write_file(keysPath, clickedKeys, strlen(clickedKeys))) {
@@ -498,8 +501,10 @@ int main(int argc, char **argv) {
     document = read_file(documentPath);
 
     if (document != NULL) {
-        check_has(document, "select C3", "el clic en la celda puso el cursor ahi");
+        check_has(document, "select A1", "el clic derecho puso el cursor en la celda copiada");
         check_has(document, "format C3 bold", "y el clic en el boton puso el formato");
+        check(strstr(document, "tools off") == NULL,
+              "el chip de la fila de las pestanas volvio a traer la fila de las herramientas");
     } else {
         check(false, "el documento de los clics se guardo");
     }

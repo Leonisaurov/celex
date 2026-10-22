@@ -102,6 +102,15 @@ typedef struct {
 int grid_bottom(const CellManager *manager, int height);
 int tools_row(const CellManager *manager, int height);
 int sheet_row(int height);
+int status_row(int height);
+
+// Si una columna de la barra de estado es del nombre del archivo, que es el
+// tirador de la fila de las herramientas.
+int status_path_at(int x);
+
+// En que columna de la fila de las pestanas empieza el chip que devuelve la fila
+// de las herramientas cuando esta quitada.
+int tools_chip_column(int width);
 
 // La hoja que se esta viendo, y su estado. Todo lo que es de una hoja se mira
 // aqui: las celdas, el cursor, la vista y el historial.

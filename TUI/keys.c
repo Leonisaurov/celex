@@ -130,6 +130,21 @@ static void copy(CellManager *manager) {
     set_message(manager, message);
 }
 
+// Poner y quitar la fila de las herramientas. Es un ajuste de la pantalla, como
+// el tamano de las celdas, y no cuenta como un cambio del archivo. El aviso va
+// corto a proposito: la barra de estado dice el nombre del archivo al final, y un
+// aviso largo se lo taparia, que es justo el sitio donde se clica para volver a
+// traer la fila. Lo que se ve cuando esta quitada es el chip de la fila de las
+// pestanas.
+static void toggle_tools(CellManager *manager) {
+    manager->showTools = !manager->showTools;
+
+    // La rejilla cambia de sitio con la fila, asi que se pinta entera de nuevo.
+    invalidate_screen();
+
+    set_message(manager, manager->showTools ? "tools shown" : "tools off");
+}
+
 bool handle_mouse(Editor *editor, CellManager *manager, const Mouse *mouse) {
     int width = manager->size.x < 20 ? 20 : manager->size.x;
     int height = manager->size.y < 6 ? 6 : manager->size.y;
@@ -165,6 +180,13 @@ bool handle_mouse(Editor *editor, CellManager *manager, const Mouse *mouse) {
     }
 
     if (mouse->row == sheet_row(height)) {
+        if (!manager->showTools && mouse->column >= tools_chip_column(width)) {
+            // El chip que se escribe cuando la fila esta quitada.
+            toggle_tools(manager);
+
+            return editor->running;
+        }
+
         int sheet = sheet_at_column(manager, mouse->column);
 
         if (sheet < 0 || sheet == manager->active) {
@@ -173,6 +195,14 @@ bool handle_mouse(Editor *editor, CellManager *manager, const Mouse *mouse) {
 
         sheet_select(manager, sheet);
         set_message(manager, sheet_name_at(manager, sheet));
+
+        return editor->running;
+    }
+
+    if (mouse->row == status_row(height) && status_path_at(mouse->column)) {
+        // El nombre del archivo es el tirador de la fila: escondida, el boton que
+        // la ponía ya no se ve, y hay algo que poder tocar para traerla.
+        toggle_tools(manager);
 
         return editor->running;
     }
@@ -388,15 +418,8 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
     } else if (key == KEY_CTRL_K) {
         // La fila de las herramientas, arriba o abajo: quien trabaja a teclado se
         // queda con una fila mas de hoja, y quien trabaja a clic las quiere
-        // delante. Es un ajuste de la pantalla, como el tamano de las celdas, y no
-        // cuenta como un cambio del archivo.
-        manager->showTools = !manager->showTools;
-
-        // La rejilla cambia de sitio con la fila, asi que se pinta entera de
-        // nuevo.
-        invalidate_screen();
-
-        set_message(manager, manager->showTools ? "tools shown" : "tools hidden");
+        // delante.
+        toggle_tools(manager);
         keepMessage = true;
     } else if (sheet_state(manager)->editing) {
         switch (key) {

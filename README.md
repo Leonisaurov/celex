@@ -252,6 +252,8 @@ the keyboard, so a slow frame is a key that answers late.
 | wheel              | one row up, or down                        |
 | click on a tab     | change the sheet                           |
 | click on a button  | the key of that button                     |
+| click on `[tools]` | bring the row of tools back                 |
+| click the name     | the same, from the status bar               |
 
 While a cell is being edited the arrows move the text cursor inside it,
 and the cell under the cursor is the one that shows where the text goes.
@@ -362,6 +364,12 @@ tools off
 
 What fits is what is drawn: in eighty columns the row shows ten buttons and the
 rest wait for a wider window, like the tabs do.
+
+Taken away, the row leaves two ways back: a `[tools]` chip at the end of the tab
+row, which is only drawn while the row is away, and the name of the file at the
+end of the status bar, which is always there. `Ctrl+K` is the same switch from the
+keyboard. The bar says `tools off` when it goes away — short on purpose, because a
+longer note would push the file name off the bar, and that is the thing to click.
 
 The mouse does the same things the keys do, wherever it is asked for: a click in
 a cell puts the cursor there, a double click opens the cell to be edited, a right

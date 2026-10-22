@@ -82,8 +82,9 @@ static void type_text(CellManager *manager, Editor *editor, const char *text) {
     }
 }
 
-// Dibuja la hoja y devuelve lo que se dibujo en la pantalla.
-static char *draw(CellManager *manager) {
+// Dibuja la hoja, con el nombre de archivo que se ponga en la barra de estado, y
+// devuelve lo que se dibujo.
+static char *draw_path(CellManager *manager, const char *path) {
     FILE *file = tmpfile();
 
     if (file == NULL) {
@@ -111,11 +112,11 @@ static char *draw(CellManager *manager) {
     print_cell_manager(manager);
     print_tools(manager);
     print_sheets(manager);
-    print_status(manager, "NORMAL", NULL);
+    print_status(manager, "NORMAL", path);
     print_cell_manager(manager);
     print_tools(manager);
     print_sheets(manager);
-    print_status(manager, "NORMAL", NULL);
+    print_status(manager, "NORMAL", path);
 
     fflush(stdout);
 
@@ -144,6 +145,11 @@ static char *draw(CellManager *manager) {
     fclose(file);
 
     return buffer;
+}
+
+// Lo mismo, sin nombre de archivo en la barra.
+static char *draw(CellManager *manager) {
+    return draw_path(manager, NULL);
 }
 
 int main(void) {
@@ -432,7 +438,7 @@ int main(void) {
 
     handle_key(&tooledEditor, &tooled, KEY_CTRL_K);
     check(!tooled.showTools, "el Ctrl+K esconde la fila");
-    check_message(&tooled, "tools hidden", "y la barra lo dice");
+    check_message(&tooled, "tools off", "y la barra lo dice cortito, para no tapar el nombre");
     check(!sheet_state(&tooled)->dirty, "esconderla no es cambiar la hoja");
 
     screen = draw(&tooled);
@@ -585,6 +591,48 @@ int main(void) {
     handle_mouse(&clickedEditor, &clicked, &onGrid);
     check(sheet_state(&clicked)->cursor.y == 6,
           "sin la fila de las herramientas, ahi abajo tambien hay celdas");
+
+    // Escondidas las herramientas, la fila de las pestanas lleva el chip que las
+    // devuelve: es lo que se ve, y lo que se clica.
+    sheet_state(&clicked)->dirty = false;
+
+    screen = draw_path(&clicked, "notas.clex");
+    check(screen != NULL && strstr(screen, "[tools]") != NULL,
+          "con la fila quitada, la de las pestanas lleva el chip");
+    free(screen);
+
+    Mouse onChip = { CLICK_LEFT, true, tools_chip_column(80) + 1, sheet_row(24) };
+
+    handle_mouse(&clickedEditor, &clicked, &onChip);
+    check(clicked.showTools, "un clic en el chip vuelve a poner la fila");
+    check(!sheet_state(&clicked)->dirty, "y traerla no cuenta como un cambio de la hoja");
+
+    // Puesta la fila, el chip no se ve: el boton de quitarla esta en la propia
+    // fila.
+    screen = draw_path(&clicked, "notas.clex");
+    check(screen != NULL && strstr(screen, "[tools]") == NULL, "con la fila puesta, el chip no se ve");
+    check(screen != NULL && strstr(screen, "tools:") != NULL, "y la fila se vuelve a pintar");
+    free(screen);
+
+    // El otro tirador es el nombre del archivo de la barra de estado.
+    handle_key(&clickedEditor, &clicked, KEY_CTRL_K);
+
+    screen = draw_path(&clicked, "notas.clex");
+    check(screen != NULL && strstr(screen, "notas.clex") != NULL, "la barra lleva el nombre del archivo");
+    free(screen);
+
+    Mouse onName = { CLICK_LEFT, true, 80 - (int) strlen("notas.clex") - 1, status_row(24) };
+
+    handle_mouse(&clickedEditor, &clicked, &onName);
+    check(clicked.showTools, "un clic en el nombre del archivo lo trae de vuelta");
+
+    // Un clic en otra parte de la barra no la mueve.
+    handle_key(&clickedEditor, &clicked, KEY_CTRL_K);
+
+    Mouse onBar = { CLICK_LEFT, true, 2, status_row(24) };
+
+    handle_mouse(&clickedEditor, &clicked, &onBar);
+    check(!clicked.showTools, "un clic en otra parte de la barra no la trae");
 
     free_cell_manager(&clicked);
     set_cell_size(4, 2);

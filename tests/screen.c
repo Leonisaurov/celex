@@ -14,6 +14,14 @@
 // Las teclas son un archivo con los bytes que se teclearian, igual que en
 // app_test. Con -color se marcan con un numero las celdas que llevan color,
 // para ver de texto lo que de otro modo habria que ver en la terminal.
+//
+// Ojo con -ancho y -alto: al editor se le da la entrada y la salida por
+// archivos, sin consola, y sin consola no hay tamano que leer — se dibuja para
+// ochenta columnas y veinticuatro filas siempre. Los dos numeros solo mandan lo
+// que se recorta al mirar, que es para lo que sirven: ver el borde de la
+// pantalla. Para ver el layout de una pantalla de verdad con otro tamano hay que
+// mirar en la terminal, o correr las pruebas de la consola, que si usan una
+// pseudoconsola con el tamano puesto.
 
 #include <stdbool.h>
 #include <stdio.h>

@@ -38,6 +38,13 @@ tiene acciones propias: cada boton *es* su tecla, asi que la barra y el teclado 
 pueden contradecirse. Lo que no cabe en el ancho no se pinta, como las pestanas.
 En el documento se guarda `tools off`, y sin esa linea la fila esta puesta.
 
+Quitar la fila quita el boton de quitarla, asi que quedan dos tiradores para
+volver: el chip `[tools]` al final de la fila de las pestanas, que solo se pinta
+mientras la fila esta fuera, y el nombre del archivo al final de la barra de
+estado, que esta siempre. El aviso que deja es `tools off`, corto a proposito: la
+barra va justa y un aviso largo se tapa el nombre, que es justamente lo que hay
+que poder ver y clica.
+
 El raton tambien esta: la terminal manda `ESC[<boton;columna;fila M` (o `m` al
 soltar) y eso es lo que lee `TUI/input.c`. En Windows, la consola da `MOUSE_EVENT`
 en vez de secuencias, y `TUI/tui_platform.c` los convierte en la misma secuencia
