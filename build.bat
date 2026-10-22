@@ -159,6 +159,18 @@ for /l %%i in (1,1,4) do (
 goto :error
 :app_listo
 
+rem Las pruebas de la consola: corren el programa dentro de una consola de
+rem verdad, que es como se usa todos los dias.
+echo Compilando las pruebas de la consola...
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /Fobuild\obj\ /Febuild\console_test.exe tests\console_test.c /link user32.lib
+    if not errorlevel 1 goto :consola_lista
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:consola_lista
+
 echo Listo: build\celex.exe y build\celexs.exe
 build\runner.exe build\celexs.exe tests
 if errorlevel 1 goto :fallo
@@ -173,6 +185,9 @@ build\input_test.exe
 if errorlevel 1 goto :fallo
 
 build\app_test.exe build\celex.exe
+if errorlevel 1 goto :fallo
+
+build\console_test.exe build\celex.exe
 if errorlevel 1 goto :fallo
 
 popd

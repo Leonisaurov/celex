@@ -117,6 +117,12 @@ static void push_key(const INPUT_RECORD *record, unsigned long long time) {
     char character = key->uChar.AsciiChar;
 
     if (character == '\0') {
+        // Algunas terminales mandan la tecla sin el caracter: el codigo de
+        // control se saca de la tecla virtual y de los modificadores.
+        if (control && code >= 'A' && code <= 'Z') {
+            input_push_byte(&console_input, (unsigned char) (code - 'A' + 1), time);
+        }
+
         return;
     }
 
@@ -147,12 +153,22 @@ static void push_key(const INPUT_RECORD *record, unsigned long long time) {
     input_push_byte(&console_input, (unsigned char) character, time);
 }
 
-// Lee los eventos que hay en la consola, sin esperar.
-static int read_console_events(void) {
-    INPUT_RECORD records[256];
+// Cuantos eventos hay esperando en la consola.
+static int count_console_events(void) {
     DWORD available = 0;
 
-    if (!PeekConsoleInput(std_input(), NULL, 0, &available)) {
+    if (!GetNumberOfConsoleInputEvents(std_input(), &available)) {
+        return -1;
+    }
+
+    return (int) available;
+}
+
+// Lee los eventos que hay en la consola, sin esperar.
+static int read_console_events(void) {
+    int available = count_console_events();
+
+    if (available < 0) {
         return -1;
     }
 
@@ -160,10 +176,14 @@ static int read_console_events(void) {
         return 0;
     }
 
-    DWORD wanted = available < 256 ? available : 256;
+    if (available > 256) {
+        available = 256;
+    }
+
+    INPUT_RECORD records[256];
     DWORD read = 0;
 
-    if (!ReadConsoleInput(std_input(), records, wanted, &read)) {
+    if (!ReadConsoleInput(std_input(), records, (DWORD) available, &read)) {
         return -1;
     }
 
@@ -184,15 +204,17 @@ static int read_console_events(void) {
     return (int) read;
 }
 
-// Espera a que la consola tenga algo, con un tiempo maximo.
-static bool wait_console_events(DWORD milliseconds) {
+// Espera a que la consola tenga algo, con un tiempo maximo. Devuelve el
+// resultado de la espera: WAIT_OBJECT_0 si hay algo, WAIT_TIMEOUT si se
+// acabo el tiempo, o WAIT_FAILED si la consola no se puede esperar.
+static DWORD wait_console_events(DWORD milliseconds) {
     HANDLE handle = std_input();
 
     if (handle == INVALID_HANDLE_VALUE) {
-        return false;
+        return WAIT_FAILED;
     }
 
-    return WaitForSingleObject(handle, milliseconds) == WAIT_OBJECT_0;
+    return WaitForSingleObject(handle, milliseconds);
 }
 
 void platform_open_screen() {
@@ -304,6 +326,18 @@ int platform_getkey() {
             continue;
         }
 
+        // Se leen los eventos que haya. Si no hay ninguno, se espera a que
+        // los haya.
+        int read = read_console_events();
+
+        if (read < 0) {
+            return -1;
+        }
+
+        if (read > 0) {
+            continue;
+        }
+
         // Si ya hay caracteres a medias, se espera un poco a que llegue el
         // resto de la secuencia de escape. Si no hay nada, se espera a que
         // pulse una tecla.
@@ -313,14 +347,29 @@ int platform_getkey() {
             wait = 200;
         }
 
-        if (!wait_console_events(wait)) {
+        DWORD result = wait_console_events(wait);
+
+        if (result == WAIT_OBJECT_0) {
+            continue;
+        }
+
+        if (result == WAIT_TIMEOUT) {
             // No llego nada: lo que este a medias se resuelve.
             input_no_more_bytes(&console_input);
             continue;
         }
 
-        if (read_console_events() < 0) {
+        // La consola no se puede esperar: se lee directamente, que espera
+        // hasta que haya algo.
+        INPUT_RECORD record;
+        DWORD count = 0;
+
+        if (!ReadConsoleInput(std_input(), &record, 1, &count) || count == 0) {
             return -1;
+        }
+
+        if (record.EventType == KEY_EVENT && record.Event.KeyEvent.bKeyDown) {
+            push_key(&record, event_time());
         }
     }
 }

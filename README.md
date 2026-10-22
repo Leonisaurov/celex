@@ -110,6 +110,11 @@ keys or as pastes.
 and checks the sheet that it saves and what it draws in the screen. That is
 the test that says if the editor works as it should, from the outside.
 
+`tests/console_test.c` runs the editor inside a real console — a pseudo
+console in Windows, a terminal in POSIX — and sends it the keys. It is the
+test that catches the editor getting stuck when it reads the console, which
+is what happens when the terminal is a terminal and not a pipe.
+
 The language has some debug code that prints the symbols, the chunks and
 the tokens. It is not compiled in a normal build, and it is turned on
 with:
