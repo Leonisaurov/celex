@@ -48,6 +48,7 @@ Inside `TUI/` the editor is in pieces, each one with its own job:
 | `TUI/theme.c`        | the colors: what each part of the screen looks like   |
 | `TUI/complete.c`     | the words the tab key can complete                   |
 | `TUI/document.c`     | the `.clex` file: the structure of the document       |
+| `TUI/tools.c`        | the row of tools, and the key behind each button    |
 | `TUI/script.c`       | runs the sheet and fills the cells with their values |
 | `TUI/file.c`         | reads and writes the `.cle` file                  |
 
@@ -232,6 +233,7 @@ the keyboard, so a slow frame is a key that answers late.
 | `Ctrl+B`           | bold the cell, or un-bold it              |
 | `Ctrl+U`           | underline the cell, or take it away       |
 | `Ctrl+O`           | where the text of the cell sits            |
+| `Ctrl+K`           | hide or show the row of tools              |
 | `Ctrl+N` `Ctrl+P`  | the next sheet, the previous one          |
 | `Ctrl+A`           | add a sheet after the one being seen      |
 | `Ctrl+D`           | remove the sheet being seen               |
@@ -340,6 +342,20 @@ The tokens are the same words the bar says, and a color is a number of the
 palette, from 1 to 16, where not putting one is the color of the theme. A cell
 with no format has no line. A format on an empty cell is allowed, so a table can
 be colored before it is filled.
+
+There is a row of tools above the tabs, with the names of what they do: `tools:
+bold line align copy paste undo redo save hide ...`. A button is not a second
+way of doing something — it is the key it shows, sent by the editor when it is
+clicked, so the two ways cannot drift apart. `Ctrl+K` (or its button) takes the
+row away and gives its line back to the sheet, and the file remembers which of
+the two it was:
+
+```
+tools off
+```
+
+What fits is what is drawn: in eighty columns the row shows ten buttons and the
+rest wait for a wider window, like the tabs do.
 
 The file has sheets, and the sheets have their own row of tabs above the status
 bar. `Ctrl+A` puts a new sheet after the one being seen, `Ctrl+N` and `Ctrl+P`
@@ -480,6 +496,7 @@ The `.clex` is written for the editor to read, not for editing by hand:
 celex-document 1
 theme oscuro
 cell-size 4 2
+tools off
 sheet "numeros"
   select E3
   scroll 15 0
@@ -501,6 +518,8 @@ end-sheet
   cell is always one line, so a cell source with quotes in it round-trips.
 - `select` and `scroll` remember which cell had the cursor and how far the view
   had slid, for every sheet.
+- `tools off` remembers that the row of tools was hidden. Without the line the
+  row is shown.
 - A line that is not understood is counted and skipped, so a file from a later
   version still opens.
 - A cell with no content has no line, like in a script.

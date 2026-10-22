@@ -83,6 +83,7 @@ int main(int argc, char **argv) {
         }
 
         print_cell_manager(&manager);
+        print_tools(&manager);
         print_sheets(&manager);
         print_status(&manager, sheet_state(&manager)->editing ? "EDIT" : "NORMAL", editor.savePath);
 

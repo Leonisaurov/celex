@@ -90,7 +90,18 @@ typedef struct {
     // texto se escribe al final, y se fija con Enter o se deja con Escape.
     bool renaming;
     char renameText[SHEET_NAME_SIZE];
+    // Si la fila de las herramientas esta puesta. Es de la pantalla, y no de una
+    // hoja: quien trabaja a teclado la quita para todos los archivos, y quien
+    // trabaja a clic la deja.
+    bool showTools;
 } CellManager;
+
+// Las filas de abajo, de arriba a abajo: la rejilla, las herramientas si estan
+// puestas, las pestañas de las hojas y la barra de estado. La rejilla acaba donde
+// empieza lo demas.
+int grid_bottom(const CellManager *manager, int height);
+int tools_row(const CellManager *manager, int height);
+int sheet_row(const CellManager *manager, int height);
 
 // La hoja que se esta viendo, y su estado. Todo lo que es de una hoja se mira
 // aqui: las celdas, el cursor, la vista y el historial.
@@ -144,6 +155,9 @@ void print_status(CellManager *manager, const char *mode, const char *path);
 
 // La fila de las pestañas de las hojas.
 void print_sheets(CellManager *manager);
+
+// La fila de las herramientas, encima de las pestañas.
+void print_tools(CellManager *manager);
 
 // Que pestañas caben en una fila de `width` columnas, con `sizes` como lo que
 // pesa el nombre de cada una de las `count` hojas y `active` como la que se esta

@@ -258,8 +258,11 @@ char *document_source(CellManager *manager) {
     Text text = { NULL, 0, 0 };
     char line[128];
 
-    snprintf(line, sizeof(line), "%s %d\ntheme %s\ncell-size %d %d\n",
-             DOCUMENT_MAGIC, DOCUMENT_VERSION, theme_name(), cellWidth, cellHeight);
+    snprintf(line, sizeof(line), "%s %d\ntheme %s\ncell-size %d %d\n%s",
+             DOCUMENT_MAGIC, DOCUMENT_VERSION, theme_name(), cellWidth, cellHeight,
+             // La fila de las herramientas solo se escribe cuando no esta puesta:
+             // sin la linea, el editor la pone.
+             manager->showTools ? "" : "tools off\n");
 
     if (!text_add(&text, line)) {
         free(text.text);
@@ -433,6 +436,10 @@ int document_load(const char *content, CellManager *manager, int *ignored) {
     // El documento es la verdad: lo que hubiera antes se olvida.
     workbook_clear(manager);
 
+    // Sin la linea de las herramientas, la fila esta puesta, como al abrir el
+    // editor.
+    manager->showTools = true;
+
     char *text = (char *) malloc(strlen(content) + 1);
     if (text == NULL) {
         return 0;
@@ -505,6 +512,20 @@ int document_load(const char *content, CellManager *manager, int *ignored) {
                 ignoredLines++;
             } else {
                 set_cell_size(width, height);
+            }
+        } else if (strncmp(at, "tools", 5) == 0 && isspace((unsigned char) at[5])) {
+            char name[SHEET_NAME_SIZE];
+
+            at = read_word(at + 5, name, sizeof(name));
+
+            if (at == NULL) {
+                ignoredLines++;
+            } else if (strcmp(name, "off") == 0) {
+                manager->showTools = false;
+            } else if (strcmp(name, "on") == 0) {
+                manager->showTools = true;
+            } else {
+                ignoredLines++;
             }
         } else if (strncmp(at, "sheet", 5) == 0 && isspace((unsigned char) at[5])) {
             char name[SHEET_NAME_SIZE];

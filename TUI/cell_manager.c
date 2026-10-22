@@ -1,6 +1,7 @@
 #include "cell_manager.h"
 #include "hashmap.h"
 #include "theme.h"
+#include "tools.h"
 #include "tui.h"
 #include <stdbool.h>
 #include <stdint.h>
@@ -19,6 +20,7 @@
 
 #include "cell.h"
 #include "ref.h"
+#include "tools.h"
 #include "version.h"
 
 // El fotograma anterior, para redibujar solo lo que cambio.
@@ -43,8 +45,23 @@ void sheet_select(CellManager *manager, int index);
 #define STATUS_HEIGHT 1
 // Las hojas tambien tienen su fila, encima de la barra de estado.
 #define SHEET_BAR_HEIGHT 1
-// La primera fila que ya no es de la rejilla.
-#define GRID_BOTTOM(height) ((height) - STATUS_HEIGHT - SHEET_BAR_HEIGHT)
+// Y las herramientas la suya, encima de las hojas, cuando estan puestas.
+#define TOOLS_HEIGHT 1
+
+// Las filas de abajo. La rejilla acaba donde empieza lo demas, y lo demas son
+// tres filas cuando las herramientas estan puestas y dos cuando no: quien trabaja
+// a teclado se queda con dos filas mas de hoja.
+int grid_bottom(const CellManager *manager, int height) {
+    return height - STATUS_HEIGHT - SHEET_BAR_HEIGHT - (manager->showTools ? TOOLS_HEIGHT : 0);
+}
+
+int tools_row(const CellManager *manager, int height) {
+    return grid_bottom(manager, height);
+}
+
+int sheet_row(const CellManager *manager, int height) {
+    return height - STATUS_HEIGHT - SHEET_BAR_HEIGHT;
+}
 
 // La pantalla se dibuja por columnas, no por bytes: un caracter de la caja
 // ocupa tres bytes en UTF-8 pero una sola columna. Cada celda del buffer
@@ -1091,6 +1108,7 @@ CellManager new_cell_manager(TermSize size) {
     manager.sheets = (Sheet *) calloc(manager.sheetCapacity, sizeof(Sheet));
     manager.sheetCount = 1;
     manager.active = 0;
+    manager.showTools = true;
 
     strcpy(manager.sheets[0].name, "Sheet1");
     manager.sheets[0].state = new_sheet_state();
@@ -1373,6 +1391,11 @@ static char previous_sheets[MESSAGE_SIZE * 4];
 static int previous_sheets_active = -1;
 static bool previous_sheets_ready = false;
 
+// El ultimo ancho con el que se pintaron las herramientas: la fila solo depende
+// del ancho, asi que con el mismo no se vuelve a escribir. -1 cuando no esta
+// puesta, para que al volver a ponerla se pinte.
+static int previous_tools_width = -1;
+
 // Cambia el tamano de las celdas, con los limites puestos.
 void set_cell_size(int width, int height) {
     if (width < CELL_MIN_WIDTH) width = CELL_MIN_WIDTH;
@@ -1440,7 +1463,7 @@ static void paint_grid(CellManager *manager) {
     int width = manager->size.x < 20 ? 20 : manager->size.x;
     int height = manager->size.y < 6 ? 6 : manager->size.y;
 
-    int status_y = GRID_BOTTOM(height);
+    int status_y = grid_bottom(manager, height);
 
     // Cuanto sitio tiene la rejilla en la pantalla. La ultima fila es para la
     // barra de estado, y el margen de la izquierda y la fila de arriba son para
@@ -1726,6 +1749,7 @@ static void paint_grid(CellManager *manager) {
         // que redibujar.
         previous_status_ready = false;
         previous_sheets_ready = false;
+        previous_tools_width = -1;
     }
 
     for (int y = 0; y < status_y; y++) {
@@ -1782,6 +1806,10 @@ void invalidate_screen(void) {
     free_previous();
     previous_status_ready = false;
     previous_sheets_ready = false;
+
+    // Las herramientas llevan colores del tema en su propia fila, asi que con un
+    // tema nuevo se vuelven a escribir.
+    previous_tools_width = -1;
 }
 
 // Cuantos fotogramas se pintan en medio de un desplazamiento, y cuanto se
@@ -1845,7 +1873,7 @@ static void pan_view(CellManager *manager, int *dx, int *dy) {
     int height = manager->size.y < 6 ? 6 : manager->size.y;
 
     int viewWidth = width - HEADER_WIDTH;
-    int viewHeight = GRID_BOTTOM(height) - HEADER_HEIGHT;
+    int viewHeight = grid_bottom(manager, height) - HEADER_HEIGHT;
 
     if (viewWidth < STRIDE_X) viewWidth = STRIDE_X;
     if (viewHeight < STRIDE_Y) viewHeight = STRIDE_Y;
@@ -1944,7 +1972,7 @@ void sheet_bar_range(const int *sizes, int count, int active, int width, int *fi
 void print_sheets(CellManager *manager) {
     int width = manager->size.x < 20 ? 20 : manager->size.x;
     int height = manager->size.y < 6 ? 6 : manager->size.y;
-    int y = height - STATUS_HEIGHT - SHEET_BAR_HEIGHT;
+    int y = sheet_row(manager, height);
 
     // Las hojas unidas, para poder comparar con la linea de antes.
     char joined[MESSAGE_SIZE * 4];
@@ -2045,6 +2073,71 @@ void print_sheets(CellManager *manager) {
     snprintf(previous_sheets, sizeof(previous_sheets), "%s", joined);
     previous_sheets_active = manager->active;
     previous_sheets_ready = true;
+
+    flush();
+}
+
+// Las herramientas, en su fila, encima de las pestañas. Cada boton es una tecla
+// escrita: lo que se hace con un clic es lo mismo que con el teclado, y lo que no
+// cabe en el ancho de la pantalla se queda sin pintar, no cortado.
+void print_tools(CellManager *manager) {
+    int width = manager->size.x < 20 ? 20 : manager->size.x;
+    int height = manager->size.y < 6 ? 6 : manager->size.y;
+
+    if (!manager->showTools) {
+        // Sin la fila, la rejilla se la queda: se redibuja entera al cambiar, asi
+        // que aqui no hace falta escribir nada.
+        previous_tools_width = -1;
+
+        return;
+    }
+
+    if (previous_tools_width == width) {
+        return;
+    }
+
+    previous_tools_width = width;
+
+    int starts[TOOL_LIMIT];
+    int fitted = tools_fit(width, starts);
+
+    move_cursor(0, (uint16_t) tools_row(manager, height));
+
+    // El nombre de la fila, y despues los botones, uno detras de otro y donde
+    // dice tools_fit: el mismo sitio es el que se clica.
+    fputs(style_sequence(STYLE_GRID), stdout);
+    fputs(TOOLS_LABEL, stdout);
+
+    int used = tools_label_width();
+
+    for (int i = 0; i < fitted; i++) {
+        const char *name = tool_at(i).name;
+
+        while (used < starts[i]) {
+            fputc(' ', stdout);
+            used++;
+        }
+
+        // El boton es un espacio, el nombre, y otro espacio: el aire de los lados
+        // también se clica, como en cualquier boton.
+        fputs(style_sequence(STYLE_GRID), stdout);
+        fputc(' ', stdout);
+
+        fputs(style_sequence(STYLE_HEADER), stdout);
+        fputs(name, stdout);
+
+        fputs(style_sequence(STYLE_GRID), stdout);
+        fputc(' ', stdout);
+
+        used += (int) strlen(name) + 2;
+    }
+
+    // El resto de la fila, en blanco, para tapar lo que hubiera de antes.
+    fputs(style_sequence(STYLE_NONE), stdout);
+
+    for (; used < width; used++) {
+        fputc(' ', stdout);
+    }
 
     flush();
 }

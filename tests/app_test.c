@@ -282,6 +282,7 @@ int main(int argc, char **argv) {
     keys[length++] = 0x16;    // Ctrl+V
     keys[length++] = 0x02;    // Ctrl+B: negrita en la celda pegada
     keys[length++] = 0x0F;    // Ctrl+O: y alineada a la izquierda
+    keys[length++] = 0x0B;    // Ctrl+K: esconder la fila de las herramientas
     keys[length++] = 0x05;    // Ctrl+E: exportar el guion .cle
     keys[length++] = 0x13;    // Ctrl+S: guardar el documento .clex
     keys[length++] = 'q';     // salir
@@ -322,6 +323,7 @@ int main(int argc, char **argv) {
         check_has(document, "celex-document 1", "el documento empieza con su cabecera");
         check_has(document, "cell A1 \"6*7\"", "el documento guarda las celdas con su estructura");
         check_has(document, "format B1 align=left bold", "y guarda el formato de la celda");
+        check_has(document, "tools off", "y guarda las herramientas escondidas");
     }
 
     free(document);
@@ -335,6 +337,8 @@ int main(int argc, char **argv) {
     if (screen != NULL) {
         check_has(screen, "6*7", "la formula pegada sale en la pantalla");
         check_has(screen, "\xE2\x94\x84", "la celda copiada sale con el borde punteado");
+        check_has(screen, "tools:", "la fila de las herramientas se pinta");
+        check_has(screen, "bold", "y con los nombres de los botones");
     }
 
     free(screen);

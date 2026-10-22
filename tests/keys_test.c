@@ -10,6 +10,7 @@
 #include "clipboard.h"
 #include "keys.h"
 #include "theme.h"
+#include "tools.h"
 #include "tui.h"
 
 #include <stdbool.h>
@@ -101,14 +102,19 @@ static char *draw(CellManager *manager) {
     // Se dibuja desde una pantalla en blanco, y dos veces: la primera pinta todo
     // y la segunda solo lo que cambio, que es lo que se ve en la pantalla de
     // verdad. Empezar de cero es lo que hace que lo que se mire sea siempre la
-    // pantalla entera, y no lo que cambio desde la prueba de antes. La barra de
-    // estado se dibuja tambien, porque es donde se ven los avisos y lo que ofrece
-    // el tabulador.
+    // pantalla entera, y no lo que cambio desde la prueba de antes. Se dibuja la
+    // pantalla igual que el programa: la rejilla, las herramientas, las pestanas y
+    // la barra de estado, que es donde se ven los avisos y lo que ofrece el
+    // tabulador.
     invalidate_screen();
 
     print_cell_manager(manager);
+    print_tools(manager);
+    print_sheets(manager);
     print_status(manager, "NORMAL", NULL);
     print_cell_manager(manager);
+    print_tools(manager);
+    print_sheets(manager);
     print_status(manager, "NORMAL", NULL);
 
     fflush(stdout);
@@ -398,6 +404,49 @@ int main(void) {
     free(screen);
 
     free_cell_manager(&painted);
+
+    // La fila de las herramientas: se ve, cada boton es la tecla de siempre, y se
+    // quita con el Ctrl+K para quien viva a teclado.
+    CellManager tooled = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    Editor tooledEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+
+    set_cell_content(&tooled, 0, 0, "1");
+
+    screen = draw(&tooled);
+    check(screen != NULL && strstr(screen, "tools:") != NULL, "la fila dice que son las herramientas");
+    check(screen != NULL && strstr(screen, "bold") != NULL && strstr(screen, "save") != NULL,
+          "y se ven los nombres de los botones");
+    free(screen);
+
+    // Un boton es su tecla: el clic hace lo mismo que la mano.
+    sheet_state(&tooled)->cursor.x = 0;
+    sheet_state(&tooled)->cursor.y = 0;
+
+    handle_key(&tooledEditor, &tooled, tool_at(0).key);
+    check(cell_format(get_cell(&tooled, 0, 0)).bold == 1, "el boton de negrita manda el Ctrl+B");
+
+    // Lo que hace la negrita ya se conto arriba: aqui se vuelve a dejar la hoja
+    // limpia, para mirar solo lo de la fila.
+    handle_key(&tooledEditor, &tooled, KEY_CTRL_B);
+    sheet_state(&tooled)->dirty = false;
+
+    handle_key(&tooledEditor, &tooled, KEY_CTRL_K);
+    check(!tooled.showTools, "el Ctrl+K esconde la fila");
+    check_message(&tooled, "tools hidden", "y la barra lo dice");
+    check(!sheet_state(&tooled)->dirty, "esconderla no es cambiar la hoja");
+
+    screen = draw(&tooled);
+    check(screen != NULL && strstr(screen, "tools:") == NULL, "escondida, la fila no se pinta");
+    free(screen);
+
+    handle_key(&tooledEditor, &tooled, KEY_CTRL_K);
+    check(tooled.showTools, "el Ctrl+K la vuelve a poner");
+
+    screen = draw(&tooled);
+    check(screen != NULL && strstr(screen, "bold") != NULL, "y se vuelve a pintar entera");
+    free(screen);
+
+    free_cell_manager(&tooled);
 
     // El autocompletado: el tabulador escribe la palabra del lenguaje que falta,
     // la palabra de la hoja cuando no hay mas que una, y va pasando por las

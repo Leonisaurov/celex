@@ -11,6 +11,7 @@
 //   celex-document 1
 //   theme oscuro
 //   cell-size 4 2
+//   tools off
 //   sheet "numeros"
 //     select A1
 //     scroll 0 0

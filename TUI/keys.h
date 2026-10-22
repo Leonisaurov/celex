@@ -21,6 +21,7 @@
 #define KEY_CTRL_B 2
 #define KEY_CTRL_O 15
 #define KEY_CTRL_U 21
+#define KEY_CTRL_K 11
 
 // Lo que el editor recuerda entre pulsaciones de teclas.
 typedef struct {

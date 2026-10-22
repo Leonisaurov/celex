@@ -286,6 +286,19 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
             set_message(manager, message);
             keepMessage = true;
         }
+    } else if (key == KEY_CTRL_K) {
+        // La fila de las herramientas, arriba o abajo: quien trabaja a teclado se
+        // queda con una fila mas de hoja, y quien trabaja a clic las quiere
+        // delante. Es un ajuste de la pantalla, como el tamano de las celdas, y no
+        // cuenta como un cambio del archivo.
+        manager->showTools = !manager->showTools;
+
+        // La rejilla cambia de sitio con la fila, asi que se pinta entera de
+        // nuevo.
+        invalidate_screen();
+
+        set_message(manager, manager->showTools ? "tools shown" : "tools hidden");
+        keepMessage = true;
     } else if (sheet_state(manager)->editing) {
         switch (key) {
             case KEY_ESC:

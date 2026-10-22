@@ -31,23 +31,27 @@ Lo que se deja para despues, y por que:
 
 ## Herramientas a la vista, y raton
 
-La idea es que el editor no exija saberse las teclas: una barra de herramientas
-con botones, que se puede ocultar para quien viva a teclado. Las dos formas de
-mandar lo mismo tienen que estar en el mismo sitio.
+Lo hecho: una sola lista (`Tool` con nombre y tecla) en `TUI/tools.c`, la fila
+`tools: bold line align copy paste undo redo save hide...` encima de las
+pestañas, y `Ctrl+K` para quitarla y devolverle la fila a la rejilla. La lista no
+tiene acciones propias: cada boton *es* su tecla, asi que la barra y el teclado no
+pueden contradecirse. Lo que no cabe en el ancho no se pinta, como las pestanas.
+En el documento se guarda `tools off`, y sin esa linea la fila esta puesta.
 
-- Los comandos salen de una sola lista (`Command` con nombre, letra, tecla y
-  accion), para que la barra, el teclado y lo que se imprime en la ayuda salgan
-  del mismo sitio y no se contradigan.
+Lo que queda:
+
 - El raton: hacer clic en una celda mueve el cursor alli; en una pestana cambia
-  de hoja; en un boton ejecuta su comando. Con clic derecho se copia, y con
-  doble clic se entra a editar, como en cualquier hoja de calculo.
-- La barra se oculta con `Ctrl+K` y se guarda en el documento, para que cada
-  archivo abra como a su dueno le gusta.
-- En Windows los eventos de raton llegan por la consola (`MOUSE_EVENT`) y por
-  las secuencias de la terminal; en POSIX por `SGR` (`ESC[<b;x;yM`). El
-  editor traduce los dos a un mismo evento: boton, accion, columna y fila.
+  de hoja; en un boton ejecuta su comando. Con clic derecho se copia, y con doble
+  clic se entra a editar, como en cualquier hoja de calcula.
+- En Windows los eventos de raton llegan por la consola (`MOUSE_EVENT`) y por las
+  secuencias de la terminal; en POSIX por `SGR` (`ESC[<b;x;yM`). El editor traduce
+  los dos a un mismo evento: boton, accion, columna y fila. Hay que pedir el
+  reporte al entrar (`ESC[?1000h ESC[?1006h`) y apagarlo al salir, no sea que la
+  terminal se quede mandando clics a lo que venga detras.
 - Donde no hay raton (una tuberia, las pruebas) la barra se puede seguir usando
-  por teclado: los botones tambien tienen su letra.
+  por teclado: los botones tambien tienen su tecla.
+- Los colores de la celda por boton, cuando la barra tenga su hueco: una paleta
+  de 16 numeros no cabe en una fila de botones, pero un boton que los recorra si.
 
 ## Lo que falta alrededor
 

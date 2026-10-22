@@ -7,6 +7,7 @@
 #include "document.h"
 #include "sheet.h"
 #include "theme.h"
+#include "tools.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -338,6 +339,7 @@ int main(void) {
 
     set_cell_size(6, 3);
     check(theme_set_by_name("oscuro") != 0, "el tema se puede poner por su nombre");
+    doc.showTools = false;
 
     char *text = document_source(&doc);
     check(text != NULL, "el documento se puede escribir");
@@ -353,6 +355,7 @@ int main(void) {
         check(strstr(text, "  scroll 15 0\n") != NULL, "y lo deslizado que llevaba la vista");
         check(strstr(text, "format B4 align=right bold fg=3\n") != NULL, "el formato sale en su linea");
         check(strstr(text, "format H2 underline bg=4\n") != NULL, "y una celda vacia lleva solo su formato");
+        check(strstr(text, "tools off\n") != NULL, "y dice que las herramientas estan escondidas");
 
         CellManager back = new_cell_manager((TermSize) { .x = 80, .y = 24 });
         int ignored = -1;
@@ -364,6 +367,7 @@ int main(void) {
         check(strcmp(sheet_name_at(&back, 1), "gastos") == 0, "y la segunda el suyo");
         check(cellWidth == 6 && cellHeight == 3, "vuelve el tamano de las celdas");
         check(strcmp(theme_name(), "oscuro") == 0, "vuelve el tema");
+        check(!back.showTools, "vuelve la fila de las herramientas escondida");
 
         // Al abrir, la que se ve es la primera, como en el editor.
         check_content(&back, 0, 0, "\"hola\"", "el fuente con comillas vuelve desenredado");
@@ -431,6 +435,7 @@ int main(void) {
 
     check(rotaFormat.bold == 1 && rotaFormat.underline == 1, "lo que si valia se pone");
     check(rotaFormat.align == ALIGN_DEFAULT && rotaFormat.fg == 0, "lo que no, no");
+    check(rota.showTools, "un documento sin la linea de las herramientas las muestra");
 
     free_cell_manager(&rota);
 
@@ -450,6 +455,32 @@ int main(void) {
     check(align_pad(ALIGN_DEFAULT, "=7+1", 4) == 0, "un fuente no es un numero");
 
     set_cell_size(4, 2);
+
+    // La fila de las herramientas: lo que se pinta es lo que se clica, y lo que
+    // no cabe no se pinta ni se clica.
+    int starts[TOOL_LIMIT];
+    int fitted = tools_fit(80, starts);
+
+    check(fitted > 0 && fitted <= tool_count(), "en ochenta columnas caben algunas herramientas");
+    check(starts[0] == tools_label_width(), "la primera empieza despues del nombre de la fila");
+
+    for (int i = 0; i < fitted; i++) {
+        int size = (int) strlen(tool_at(i).name);
+
+        check(starts[i] + size + 2 <= 80, "y cada boton cabe entero en la pantalla");
+        check(tool_at_column(80, starts[i]) == i, "un boton se clica donde empieza");
+        check(tool_at_column(80, starts[i] + size + 1) == i, "y en su ultima letra");
+
+        if (i > 0) {
+            check(starts[i] > starts[i - 1], "y van una detras de otra");
+        }
+    }
+
+    check(tool_at_column(80, 0) == -1, "el nombre de la fila no es un boton");
+    check(tool_at_column(80, starts[fitted - 1] + (int) strlen(tool_at(fitted - 1).name) + 2) == -1,
+          "el hueco de despues del ultimo boton tampoco");
+    check(tools_fit(12, starts) == 0, "en una pantalla muy corta no cabe ninguna");
+    check(tools_fit(200, starts) == tool_count(), "con sitio de sobra caben todas");
 
     set_cell_size(4, 2);
     theme_set_by_name("normal");
