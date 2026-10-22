@@ -30,6 +30,8 @@ KEYS_TEST = $(BUILD)/keys_test
 INPUT_TEST = $(BUILD)/input_test
 APP_TEST = $(BUILD)/app_test
 CONSOLE_TEST = $(BUILD)/console_test
+BENCH = $(BUILD)/bench
+SCREEN = $(BUILD)/screen
 
 # El numero de compilacion va en la barra del editor, para saber siempre con
 # que binario se esta trabajando.
@@ -45,7 +47,7 @@ $(VERSION_HEADER): FORCE
 # Las pruebas de edicion usan el gestor de celdas, pero no el programa.
 EDITOR_SOURCES = $(filter-out TUI/main.c,$(TUI_SOURCES))
 
-.PHONY: all build tui script run run-script test clean
+.PHONY: all build tui script run run-script test tools clean
 
 all: build
 
@@ -86,6 +88,19 @@ $(APP_TEST): tests/app_test.c
 $(CONSOLE_TEST): tests/console_test.c
 	mkdir -p $(BUILD)
 	$(CC) tests/console_test.c -o $@ $(CFLAGS) $(SANITIZE)
+
+# Herramientas de desarrollo, no pruebas: no dicen si algo esta bien o mal,
+# sino como se ve y cuanto cuesta lo que dibuja el editor.
+$(BENCH): tests/bench.c $(EDITOR_SOURCES) $(SHARED_SOURCES) $(VERSION_HEADER)
+	mkdir -p $(BUILD)
+	$(CC) tests/bench.c $(EDITOR_SOURCES) $(SHARED_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES) -ITUI
+
+# Interpreta lo que el editor escribe y lo deja como pantalla de texto.
+$(SCREEN): tests/screen.c
+	mkdir -p $(BUILD)
+	$(CC) tests/screen.c -o $@ $(CFLAGS) $(SANITIZE)
+
+tools: $(BENCH) $(SCREEN)
 
 run: build
 	$(TUI) sample.cle

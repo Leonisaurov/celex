@@ -174,6 +174,18 @@ int main(void) {
         sheet_result_free(&result);
     }
 
+    // El deslizamiento de la vista: un salto del ancho de una celda se pinta en
+    // fotogramas de en medio, para que se vean las celdas cortadas por el
+    // borde. Un salto de una sola columna no necesita ninguno, y uno muy grande
+    // se pinta de golpe para no quedarse detras de las teclas.
+    check(pan_frames(0, 0) == 0, "no hay deslizamiento cuando la vista no se mueve");
+    check(pan_frames(1, 0) == 0, "una columna no necesita fotogramas en medio");
+    check(pan_frames(CELL_SIZE_X + 1, 0) == 2, "el ancho de una celda se desliza en dos fotogramas");
+    check(pan_frames(-(CELL_SIZE_X + 1), 0) == 2, "volver tambien se desliza");
+    check(pan_frames(0, CELL_SIZE_Y + 1) == 2, "bajar una fila se desliza");
+    check(pan_frames(2, 0) == 1, "dos columnas se deslizan en un fotograma");
+    check(pan_frames(20, 0) == 0, "un salto grande se pinta de golpe");
+
     if (failures == 0) {
         printf("  edicion: todo correcto\n");
         return 0;

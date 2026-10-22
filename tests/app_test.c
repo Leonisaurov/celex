@@ -365,6 +365,71 @@ int main(int argc, char **argv) {
     remove(keysPath);
     remove(outPath);
 
+    // Y ahora la vista: cuando el cursor se va al borde, la rejilla se
+    // desplaza y tiene que ir a buscar la celda que hace falta, sin perder de
+    // vista donde esta el cursor.
+    const char *farSheet = "A1 = 1\nU1 = 777\n";
+    size_t farLength = strlen(farSheet);
+
+    if (!write_file(sheetPath, farSheet, farLength)) {
+        printf("  FALLO: no se puede escribir el archivo de la hoja\n");
+        return 1;
+    }
+
+    // Sin moverse: la celda U1 esta fuera de la pantalla, y no se dibuja.
+    if (!write_file(keysPath, "q", 1)) {
+        printf("  FALLO: no se puede escribir el archivo de las teclas\n");
+        return 1;
+    }
+
+    status = run_editor(editor, sheetPath, keysPath, outPath);
+    check(status == 0, "el editor sale sin errores");
+
+    screen = read_file(outPath);
+    check(screen != NULL, "se puede leer lo que dibujo el editor");
+
+    if (screen != NULL) {
+        check(strstr(screen, "777") == NULL, "lo que esta fuera de la vista no se dibuja");
+    }
+
+    free(screen);
+
+    remove(outPath);
+
+    // Veinte celdas a la derecha, y una de vuelta: el cursor se para en T1, y
+    // el 777 de U1 solo puede salir si la vista se desplazo hasta ensenarla.
+    char moving[64];
+    size_t movingLength = 0;
+
+    for (int i = 0; i < 20; i++) {
+        moving[movingLength++] = 'l';
+    }
+
+    moving[movingLength++] = 'h';
+    moving[movingLength++] = 'q';
+
+    if (!write_file(keysPath, moving, movingLength)) {
+        printf("  FALLO: no se puede escribir el archivo de las teclas\n");
+        return 1;
+    }
+
+    status = run_editor(editor, sheetPath, keysPath, outPath);
+    check(status == 0, "el editor sale sin errores");
+
+    screen = read_file(outPath);
+    check(screen != NULL, "se puede leer lo que dibujo el editor");
+
+    if (screen != NULL) {
+        check_has(screen, "777", "la vista se desplaza hasta la celda del cursor");
+        check_has(screen, "T1", "la barra dice donde esta el cursor despues del desplazamiento");
+    }
+
+    free(screen);
+
+    remove(sheetPath);
+    remove(keysPath);
+    remove(outPath);
+
     if (failures == 0) {
         printf("  editor: todo correcto\n");
         return 0;

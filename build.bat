@@ -49,6 +49,13 @@ if "%MODE%"=="debug" (
     set "OPT=/O2 /DNDEBUG"
 )
 
+rem Las fuentes del editor, sin el programa: las pruebas y las herramientas de
+rem desarrollo usan el gestor de celdas, pero no arrancan la terminal.
+set "TUI_SOURCES="
+for %%f in (TUI\*.c) do (
+    if /i not "%%f"=="TUI\main.c" set "TUI_SOURCES=!TUI_SOURCES! %%f"
+)
+
 if not exist build\obj mkdir build\obj
 
 rem El numero de compilacion va en la barra del editor, para saber siempre con
@@ -91,6 +98,7 @@ goto :error
 :interprete_listo
 
 if /i "%MODE%"=="test" goto :test
+if /i "%MODE%"=="tools" goto :tools
 
 echo Listo: build\celex.exe y build\celexs.exe
 popd
@@ -109,11 +117,6 @@ goto :error
 :runner_listo
 
 rem Las pruebas de edicion: usan el gestor de celdas, pero no el programa.
-set "TUI_SOURCES="
-for %%f in (TUI\*.c) do (
-    if /i not "%%f"=="TUI\main.c" set "TUI_SOURCES=!TUI_SOURCES! %%f"
-)
-
 echo Compilando las pruebas de edicion...
 for /l %%i in (1,1,4) do (
     cl %CFLAGS% /ITUI /Fobuild\obj\ /Febuild\editor_test.exe tests\editor_test.c !TUI_SOURCES! Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c /link user32.lib
@@ -190,6 +193,35 @@ if errorlevel 1 goto :fallo
 build\console_test.exe build\celex.exe
 if errorlevel 1 goto :fallo
 
+popd
+exit /b 0
+
+:tools
+rem Las herramientas de desarrollo: cuanto cuesta un fotograma y como se ve lo
+rem que pinta el editor. No comprueban nada, solo se miran.
+echo Compilando la medida de los fotogramas...
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /ITUI /Fobuild\obj\ /Febuild\bench.exe tests\bench.c !TUI_SOURCES! Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c /link user32.lib
+    if not errorlevel 1 goto :bench_listo
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:bench_listo
+
+echo Compilando la pantalla del editor...
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /Fobuild\obj\ /Febuild\screen.exe tests\screen.c /link user32.lib
+    if not errorlevel 1 goto :pantalla_lista
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:pantalla_lista
+
+echo Listo: build\bench.exe y build\screen.exe
+echo   build\bench.exe 140 45
+echo   build\screen.exe build\celex.exe ^<teclas^> [hoja]
 popd
 exit /b 0
 

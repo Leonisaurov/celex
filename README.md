@@ -156,6 +156,30 @@ make build DEBUG=1     # on POSIX
 build.bat debug        # on Windows
 ```
 
+### Looking at the editor
+
+Two tools are built to look at the editor rather than to check it. They are not
+part of `make test`:
+
+```sh
+make tools                              # on POSIX
+build.bat tools                         # on Windows
+
+build/screen build/celex keys sample.cle   # what the editor drew, as a screen
+build/bench 140 45                         # what a frame costs
+```
+
+`build/screen` reads what the editor writes to the terminal and lays it out as
+text, so a layout can be looked at: the keys are a file with the bytes that
+would have been typed, the same way `app_test` gives them. With `-cuadros` it
+also says how many bytes and how many cursor moves that took, and with `-hasta
+N` it stops after N bytes, which is how a frame in the middle of a slide is
+seen.
+
+`build/bench` moves the cursor over a filled sheet and says how long a frame
+takes and how much it writes. While the editor is drawing it is not looking at
+the keyboard, so a slow frame is a key that answers late.
+
 ## Keys
 
 | Key                | Action                                    |
@@ -217,6 +241,14 @@ agree.
 
 When the values are being shown, the cell under the cursor always shows its
 source instead of its value, so the formula of that cell is always visible.
+
+The sheet slides instead of jumping. The view moves by characters and not by
+whole cells, so when the cursor reaches an edge the cells are cut in half at the
+other side — the next column is already peeking in, and the one left behind is
+still partly there. A move that pans the view is drawn in two frames in between,
+a few milliseconds apart, so the grid is seen gliding over those cut cells. A
+jump that is too big (many columns at once) is drawn in one frame, because
+animating it would leave the editor behind the keys.
 
 The status bar starts with the number of the build, so it is always clear
 which binary is being used. It is the commit of the repository, with a `+`

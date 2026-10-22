@@ -7,6 +7,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+// Para mirar el reloj entre los fotogramas del deslizamiento.
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <sys/select.h>
+#include <sys/time.h>
+#endif
+
 #include "cell.h"
 #include "ref.h"
 #include "version.h"
@@ -14,7 +22,10 @@
 // El fotograma anterior, para redibujar solo lo que cambio.
 static void free_previous(void);
 
-#define HEADER_WIDTH 4
+// El margen de la izquierda: las cuatro primeras columnas son para el numero
+// de fila y la quinta queda de aire, para que una celda cortada por la
+// izquierda no se pegue al numero.
+#define HEADER_WIDTH 5
 #define HEADER_HEIGHT 1
 #define STRIDE_X (CELL_SIZE_X + 1)
 #define STRIDE_Y (CELL_SIZE_Y + 1)
@@ -27,20 +38,17 @@ static void free_previous(void);
 
 #define BOX_H "\xE2\x94\x80"
 #define BOX_V "\xE2\x94\x82"
-#define BOX_TL "\xE2\x94\x8C"
-#define BOX_TR "\xE2\x94\x90"
-#define BOX_BL "\xE2\x94\x94"
-#define BOX_BR "\xE2\x94\x98"
-#define BOX_LT "\xE2\x94\x9C"
-#define BOX_RT "\xE2\x94\xA4"
-#define BOX_TD "\xE2\x94\xAC"
-#define BOX_BD "\xE2\x94\xB4"
 #define BOX_CR "\xE2\x94\xBC"
 
 // La celda copiada se marca con un borde punteado, como las hormigas
 // marchantes de las hojas de calculo, para saber que celda se copio.
 #define BOX_DASH_H "\xE2\x94\x84"
 #define BOX_DASH_V "\xE2\x94\x86"
+
+// El fotograma que se esta pintando. Se reutiliza entre fotogramas: pintar uno
+// detras de otro no tiene que costar asignar la pantalla entera cada vez.
+static char *paint_buffer = NULL;
+static size_t paint_buffer_cells = 0;
 
 // Bytes del caracter UTF-8 que empieza en text.
 static size_t utf8_size(const char *text) {
@@ -69,8 +77,8 @@ static char *cell_at(char *buffer, int width, int x, int y) {
     return buffer + ((size_t) y * (size_t) width + (size_t) x) * CELL_BYTES;
 }
 
-static void put_box(char *buffer, int width, int x, int y, const char *glyph) {
-    if (x < 0 || x >= width) {
+static void put_box(char *buffer, int width, int height, int x, int y, const char *glyph) {
+    if (x < 0 || x >= width || y < 0 || y >= height) {
         return;
     }
 
@@ -84,8 +92,8 @@ static void put_box(char *buffer, int width, int x, int y, const char *glyph) {
     cell[3] = '\0';
 }
 
-static void put_char(char *buffer, int width, int x, int y, const char *text, size_t size) {
-    if (x < 0 || x >= width) {
+static void put_char(char *buffer, int width, int height, int x, int y, const char *text, size_t size) {
+    if (x < 0 || x >= width || y < 0 || y >= height) {
         return;
     }
 
@@ -482,10 +490,8 @@ CellManager new_cell_manager(TermSize size) {
         .x = 0,
         .y = 0,
     };
-    manager.camera = (TermSize) {
-        .x = 0,
-        .y = 0,
-    };
+    manager.originX = 0;
+    manager.originY = 0;
     manager.message[0] = '\0';
     manager.showValues = false;
     manager.dirty = false;
@@ -528,6 +534,10 @@ void free_cell_manager(CellManager *manager) {
     clipboard_free(&manager->clipboard);
 
     free_previous();
+
+    free(paint_buffer);
+    paint_buffer = NULL;
+    paint_buffer_cells = 0;
 }
 
 static char *cell_key(unsigned int x, unsigned int y) {
@@ -632,19 +642,69 @@ void set_message(CellManager *manager, const char *message) {
     snprintf(manager->message, MESSAGE_SIZE, "%s", message);
 }
 
-static void update_camera(CellManager *manager, int columns, int rows) {
-    if ((int) manager->cursor.x < (int) manager->camera.x) {
-        manager->camera.x = manager->cursor.x;
+// Desplaza la vista lo justo para que la celda del cursor se vea entera. El
+// desplazamiento va de caracter en caracter, no de celda en celda: al llegar
+// al borde, la vista se desliza y en el lado de enfrente queda una celda
+// cortada, en vez de saltar toda la rejilla un ancho de celda.
+static void update_view(CellManager *manager, int viewWidth, int viewHeight) {
+    // Las columnas de los bordes de la celda del cursor, en coordenadas de la
+    // rejilla (0 es la primera columna util despues del margen).
+    int left = (int) manager->cursor.x * STRIDE_X;
+    int right = left + CELL_SIZE_X;
+
+    if (left - manager->originX < 0) {
+        manager->originX = left;
     }
-    if ((int) manager->cursor.x >= (int) manager->camera.x + columns) {
-        manager->camera.x = manager->cursor.x - columns + 1;
+
+    if (right - manager->originX > viewWidth - 1) {
+        manager->originX = right - (viewWidth - 1);
+
+        // Si la celda no cabe entera, se alinea a la izquierda.
+        if (left - manager->originX < 0) {
+            manager->originX = left;
+        }
     }
-    if ((int) manager->cursor.y < (int) manager->camera.y) {
-        manager->camera.y = manager->cursor.y;
+
+    int top = (int) manager->cursor.y * STRIDE_Y;
+    int bottom = top + CELL_SIZE_Y;
+
+    if (top - manager->originY < 0) {
+        manager->originY = top;
     }
-    if ((int) manager->cursor.y >= (int) manager->camera.y + rows) {
-        manager->camera.y = manager->cursor.y - rows + 1;
+
+    if (bottom - manager->originY > viewHeight - 1) {
+        manager->originY = bottom - (viewHeight - 1);
+
+        if (top - manager->originY < 0) {
+            manager->originY = top;
+        }
     }
+
+    if (manager->originX < 0) manager->originX = 0;
+    if (manager->originY < 0) manager->originY = 0;
+}
+
+// La primera celda que toca la ventana por la izquierda (o por arriba). Puede
+// estar cortada: se ve si su borde del otro lado sigue dentro.
+static int first_cell(int origin, int cellSize, int stride) {
+    int from = origin - cellSize;
+
+    if (from <= 0) {
+        return 0;
+    }
+
+    return (from + stride - 1) / stride;
+}
+
+// La ultima celda que toca la ventana.
+static int last_cell(int origin, int viewSize, int stride) {
+    int to = origin + viewSize - 1;
+
+    if (to < 0) {
+        return -1;
+    }
+
+    return to / stride;
 }
 
 // Escribe las celdas de una fila, sin pasarse del ancho de la pantalla.
@@ -763,7 +823,7 @@ static void free_previous(void) {
 }
 
 // Dibuja el borde punteado de la celda copiada, si se ve en la pantalla.
-static void draw_copied_cell(CellManager *manager, char *buffer, int width, int columns, int rows) {
+static void draw_copied_cell(CellManager *manager, char *buffer, int width, int height) {
     if (!clipboard_has_cell(&manager->clipboard)) {
         return;
     }
@@ -772,46 +832,53 @@ static void draw_copied_cell(CellManager *manager, char *buffer, int width, int 
     unsigned int cellY = 0;
     clipboard_cell(&manager->clipboard, &cellX, &cellY);
 
-    int column = (int) cellX - (int) manager->camera.x;
-    int row = (int) cellY - (int) manager->camera.y;
-
-    if (column < 0 || column >= columns || row < 0 || row >= rows) {
-        return;
-    }
-
-    int left = HEADER_WIDTH + column * STRIDE_X;
-    int top = HEADER_HEIGHT + row * STRIDE_Y;
+    int left = HEADER_WIDTH + (int) cellX * STRIDE_X - manager->originX;
+    int top = HEADER_HEIGHT + (int) cellY * STRIDE_Y - manager->originY;
     int right = left + CELL_SIZE_X;
     int bottom = top + CELL_SIZE_Y;
 
     // Los lados de arriba y de abajo.
     for (int x = left; x <= right; x++) {
-        put_box(buffer, width, x, top, BOX_DASH_H);
-        put_box(buffer, width, x, bottom, BOX_DASH_H);
+        put_box(buffer, width, height, x, top, BOX_DASH_H);
+        put_box(buffer, width, height, x, bottom, BOX_DASH_H);
     }
 
     // Los lados de la izquierda y de la derecha.
     for (int y = top + 1; y < bottom; y++) {
-        put_box(buffer, width, left, y, BOX_DASH_V);
-        put_box(buffer, width, right, y, BOX_DASH_V);
+        put_box(buffer, width, height, left, y, BOX_DASH_V);
+        put_box(buffer, width, height, right, y, BOX_DASH_V);
     }
 }
 
-void print_cell_manager(CellManager *manager) {
+// Pinta la rejilla desde el origen de la vista que tenga el gestor ahora
+// mismo. Se puede llamar varias veces por tecla, con origenes intermedios,
+// para que el desplazamiento se vea como un deslizamiento.
+static void paint_grid(CellManager *manager) {
     int width = manager->size.x < 20 ? 20 : manager->size.x;
     int height = manager->size.y < 6 ? 6 : manager->size.y;
 
     int status_y = height - STATUS_HEIGHT;
-    int columns = (width - HEADER_WIDTH - 3) / STRIDE_X;
-    int rows = (status_y - HEADER_HEIGHT - 1) / STRIDE_Y;
 
-    if (columns < 1) columns = 1;
-    if (rows < 1) rows = 1;
+    // Cuanto sitio tiene la rejilla en la pantalla. La ultima fila es para la
+    // barra de estado, y el margen de la izquierda y la fila de arriba son para
+    // los numeros de fila y las letras de columna.
+    int viewWidth = width - HEADER_WIDTH;
+    int viewHeight = status_y - HEADER_HEIGHT;
 
-    update_camera(manager, columns, rows);
+    if (viewWidth < STRIDE_X) viewWidth = STRIDE_X;
+    if (viewHeight < STRIDE_Y) viewHeight = STRIDE_Y;
 
+    // El bufer del fotograma se reutiliza, y solo se hace mas grande si la
+    // pantalla crece.
     size_t cells_count = (size_t) width * (size_t) height;
-    char *buffer = (char *) malloc(cells_count * CELL_BYTES);
+
+    if (paint_buffer == NULL || paint_buffer_cells < cells_count) {
+        free(paint_buffer);
+        paint_buffer = (char *) malloc(cells_count * CELL_BYTES);
+        paint_buffer_cells = paint_buffer != NULL ? cells_count : 0;
+    }
+
+    char *buffer = paint_buffer;
     if (buffer == NULL) {
         return;
     }
@@ -824,69 +891,83 @@ void print_cell_manager(CellManager *manager) {
         cell[0] = ' ';
     }
 
-    for (int row = 0; row <= rows; row++) {
-        int y = HEADER_HEIGHT + row * STRIDE_Y;
-        if (y >= status_y) break;
+    // Las celdas que tocan la ventana, incluidas las que quedan cortadas en
+    // los bordes.
+    int firstColumn = first_cell(manager->originX, CELL_SIZE_X, STRIDE_X);
+    int lastColumn = last_cell(manager->originX, viewWidth, STRIDE_X);
+    int firstRow = first_cell(manager->originY, CELL_SIZE_Y, STRIDE_Y);
+    int lastRow = last_cell(manager->originY, viewHeight, STRIDE_Y);
 
-        for (int x = HEADER_WIDTH; x < width && x <= HEADER_WIDTH + columns * STRIDE_X; x++) {
-            put_box(buffer, width, x, y, BOX_H);
+    // Las rayas verticales, una por borde de columna.
+    for (int column = firstColumn; column <= lastColumn; column++) {
+        int x = HEADER_WIDTH + column * STRIDE_X - manager->originX;
+
+        if (x < HEADER_WIDTH) continue;
+
+        for (int y = HEADER_HEIGHT; y < status_y; y++) {
+            put_box(buffer, width, height, x, y, BOX_V);
         }
     }
 
-    for (int column = 0; column <= columns; column++) {
-        int x = HEADER_WIDTH + column * STRIDE_X;
+    // Las rayas horizontales, una por borde de fila.
+    for (int row = firstRow; row <= lastRow; row++) {
+        int y = HEADER_HEIGHT + row * STRIDE_Y - manager->originY;
 
-        for (int y = HEADER_HEIGHT; y < status_y && y <= HEADER_HEIGHT + rows * STRIDE_Y; y++) {
-            put_box(buffer, width, x, y, BOX_V);
+        if (y < HEADER_HEIGHT || y >= status_y) continue;
+
+        for (int x = HEADER_WIDTH; x < width; x++) {
+            put_box(buffer, width, height, x, y, BOX_H);
         }
     }
 
-    for (int column = 0; column <= columns; column++) {
-        for (int row = 0; row <= rows; row++) {
-            int x = HEADER_WIDTH + column * STRIDE_X;
-            int y = HEADER_HEIGHT + row * STRIDE_Y;
-            if (y >= status_y) continue;
+    // Los cruces van al final, para que tapen las rayas.
+    for (int column = firstColumn; column <= lastColumn; column++) {
+        int x = HEADER_WIDTH + column * STRIDE_X - manager->originX;
 
-            const char *corner;
-            if (column == 0) {
-                corner = row == 0 ? BOX_TL : (row == rows ? BOX_BL : BOX_LT);
-            } else if (column == columns) {
-                corner = row == 0 ? BOX_TR : (row == rows ? BOX_BR : BOX_RT);
-            } else if (row == 0) {
-                corner = BOX_TD;
-            } else if (row == rows) {
-                corner = BOX_BD;
-            } else {
-                corner = BOX_CR;
-            }
+        if (x < HEADER_WIDTH) continue;
 
-            put_box(buffer, width, x, y, corner);
+        for (int row = firstRow; row <= lastRow; row++) {
+            int y = HEADER_HEIGHT + row * STRIDE_Y - manager->originY;
+
+            put_box(buffer, width, height, x, y, BOX_CR);
         }
     }
 
     // La celda copiada queda con un borde punteado, para saber cual es.
-    draw_copied_cell(manager, buffer, width, columns, rows);
+    draw_copied_cell(manager, buffer, width, height);
 
-    for (int column = 0; column < columns; column++) {
-        char *name = ref_column_name((unsigned int) (manager->camera.x + column));
+    for (int column = firstColumn; column <= lastColumn; column++) {
+        char *name = ref_column_name((unsigned int) column);
         int length = (int) strlen(name);
 
         for (int i = 0; i < length; i++) {
-            int x = HEADER_WIDTH + column * STRIDE_X + 1 + i;
-            put_char(buffer, width, x, HEADER_HEIGHT - 1, name + i, 1);
+            int x = HEADER_WIDTH + column * STRIDE_X + 1 - manager->originX + i;
+
+            // Lo que se sale por la izquierda no se ve: el margen es de los
+            // numeros de fila.
+            if (x < HEADER_WIDTH) continue;
+
+            put_char(buffer, width, height, x, HEADER_HEIGHT - 1, name + i, 1);
         }
         free(name);
     }
 
-    for (int row = 0; row < rows; row++) {
+    for (int row = firstRow; row <= lastRow; row++) {
         char label[16];
-        sprintf(label, "%u", (unsigned int) (manager->camera.y + row + 1));
+        sprintf(label, "%u", (unsigned int) (row + 1));
         int length = (int) strlen(label);
 
+        int y = HEADER_HEIGHT + row * STRIDE_Y + 1 - manager->originY;
+
+        // El numero se queda arriba en cuanto asoma la fila, para que se pueda
+        // leer aunque la celda este cortada.
+        if (y < HEADER_HEIGHT) y = HEADER_HEIGHT;
+        if (y >= status_y) continue;
+
         for (int i = 0; i < length; i++) {
-            int x = HEADER_WIDTH - 1 - (length - 1 - i);
-            int y = HEADER_HEIGHT + row * STRIDE_Y + 1;
-            put_char(buffer, width, x, y, label + i, 1);
+            // Alineado a la derecha, dejando libre la columna del separador.
+            int x = HEADER_WIDTH - 2 - (length - 1 - i);
+            put_char(buffer, width, height, x, y, label + i, 1);
         }
     }
 
@@ -894,10 +975,10 @@ void print_cell_manager(CellManager *manager) {
     int text_cursor_x = -1;
     int text_cursor_y = -1;
 
-    for (int row = 0; row < rows; row++) {
-        for (int column = 0; column < columns; column++) {
-            unsigned int x = (unsigned int) (manager->camera.x + column);
-            unsigned int y = (unsigned int) (manager->camera.y + row);
+    for (int row = firstRow; row <= lastRow; row++) {
+        for (int column = firstColumn; column <= lastColumn; column++) {
+            unsigned int x = (unsigned int) column;
+            unsigned int y = (unsigned int) row;
 
             MetaCell *meta = get_cell(manager, x, y);
             if (meta == NULL) {
@@ -919,8 +1000,10 @@ void print_cell_manager(CellManager *manager) {
                 continue;
             }
 
-            int base_x = HEADER_WIDTH + column * STRIDE_X + 1;
-            int base_y = HEADER_HEIGHT + row * STRIDE_Y + 1;
+            // Donde empieza el contenido de la celda en la pantalla. Puede
+            // estar cortado por el borde de la ventana.
+            int base_x = HEADER_WIDTH + column * STRIDE_X + 1 - manager->originX;
+            int base_y = HEADER_HEIGHT + row * STRIDE_Y + 1 - manager->originY;
 
             // Si el texto no cabe, se ve la parte donde esta el cursor.
             size_t total = char_count(content);
@@ -959,7 +1042,11 @@ void print_cell_manager(CellManager *manager) {
                     break;
                 }
 
-                put_char(buffer, width, px, py, content + index, size);
+                // Lo que se sale por arriba o por la izquierda se corta: el
+                // margen y la fila de las letras no se pisan.
+                if (px >= HEADER_WIDTH && py >= HEADER_HEIGHT) {
+                    put_char(buffer, width, height, px, py, content + index, size);
+                }
 
                 index += size;
                 used++;
@@ -977,10 +1064,10 @@ void print_cell_manager(CellManager *manager) {
         }
     }
 
-    int cursor_column = (int) manager->cursor.x - manager->camera.x;
-    int cursor_row = (int) manager->cursor.y - manager->camera.y;
-    int highlight_x = HEADER_WIDTH + cursor_column * STRIDE_X + 1;
-    int highlight_y = HEADER_HEIGHT + cursor_row * STRIDE_Y + 1;
+    // El rectangulo resaltado es la celda del cursor, con el desplazamiento
+    // de la vista ya aplicado.
+    int highlight_x = HEADER_WIDTH + (int) manager->cursor.x * STRIDE_X + 1 - manager->originX;
+    int highlight_y = HEADER_HEIGHT + (int) manager->cursor.y * STRIDE_Y + 1 - manager->originY;
 
     // Cuando cambia el tamano de la terminal hay que redibujar todo.
     bool full = !previous_ready || previous_width != width || previous_height != height;
@@ -1054,9 +1141,10 @@ void print_cell_manager(CellManager *manager) {
 
     // Se guarda el fotograma para la proxima vez.
     if (!previous_ready || previous_width != width || previous_height != height) {
+        free(previous_buffer);
         previous_buffer = (char *) malloc(cells_count * CELL_BYTES);
         if (previous_buffer == NULL) {
-            free(buffer);
+            previous_ready = false;
             flush();
             return;
         }
@@ -1073,8 +1161,115 @@ void print_cell_manager(CellManager *manager) {
     previous_text_cursor_y = text_cursor_y;
     previous_ready = true;
 
-    free(buffer);
     flush();
+}
+
+// Cuantos fotogramas se pintan en medio de un desplazamiento, y cuanto se
+// espera entre ellos. La terminal pinta a su ritmo, de unas sesenta veces por
+// segundo: fotogramas mas juntos que eso se pierden, y costarian bytes de mas.
+#define PAN_MAX_FRAMES 2
+#define PAN_MAX_DISTANCE 8
+#define PAN_FRAME_MICROSECONDS 9000
+
+// Espera microsegundos, mirando el reloj. Sleep de Windows no baja de los 15
+// ms, que seria demasiado para un deslizamiento.
+static void pan_wait(int microseconds) {
+#ifdef _WIN32
+    LARGE_INTEGER counter, frequency;
+
+    QueryPerformanceFrequency(&frequency);
+    QueryPerformanceCounter(&counter);
+
+    unsigned long long until = (unsigned long long) counter.QuadPart
+        + (unsigned long long) microseconds * (unsigned long long) frequency.QuadPart / 1000000ULL;
+
+    do {
+        QueryPerformanceCounter(&counter);
+    } while ((unsigned long long) counter.QuadPart < until);
+#else
+    struct timeval wait;
+
+    wait.tv_sec = microseconds / 1000000;
+    wait.tv_usec = (microseconds % 1000000);
+
+    select(0, NULL, NULL, NULL, &wait);
+#endif
+}
+
+// Cuantos fotogramas se pintan en medio de un desplazamiento de dx columnas y
+// dy filas. Cero es no deslizar: pintar de golpe. No se desliza cuando no hay
+// nada que recorrer, cuando el salto es de una sola columna (ya esta en su
+// sitio de una), ni cuando es tan grande que animarlo dejaria al editor detras
+// de las teclas.
+int pan_frames(int dx, int dy) {
+    int steps = dx < 0 ? -dx : dx;
+
+    if ((dy < 0 ? -dy : dy) > steps) {
+        steps = dy < 0 ? -dy : dy;
+    }
+
+    if (steps < 2 || steps > PAN_MAX_DISTANCE) {
+        return 0;
+    }
+
+    if (steps - 1 > PAN_MAX_FRAMES) {
+        return PAN_MAX_FRAMES;
+    }
+
+    return steps - 1;
+}
+// Deja el origen de la vista donde tiene que estar para que la celda del
+// cursor se vea, y devuelve cuanto se ha movido desde donde estaba.
+static void pan_view(CellManager *manager, int *dx, int *dy) {
+    int width = manager->size.x < 20 ? 20 : manager->size.x;
+    int height = manager->size.y < 6 ? 6 : manager->size.y;
+
+    int viewWidth = width - HEADER_WIDTH;
+    int viewHeight = (height - STATUS_HEIGHT) - HEADER_HEIGHT;
+
+    if (viewWidth < STRIDE_X) viewWidth = STRIDE_X;
+    if (viewHeight < STRIDE_Y) viewHeight = STRIDE_Y;
+
+    int oldX = manager->originX;
+    int oldY = manager->originY;
+
+    update_view(manager, viewWidth, viewHeight);
+
+    *dx = manager->originX - oldX;
+    *dy = manager->originY - oldY;
+
+    manager->originX = oldX;
+    manager->originY = oldY;
+}
+
+void print_cell_manager(CellManager *manager) {
+    int dx = 0;
+    int dy = 0;
+
+    pan_view(manager, &dx, &dy);
+
+    // Un desplazamiento de varias columnas se pinta poco a poco: en los
+    // fotogramas del medio se ven las celdas cortadas por los bordes, que es lo
+    // que hace que se note el deslizamiento.
+    int frames = pan_frames(dx, dy);
+
+    if (frames > 0) {
+        int oldX = manager->originX;
+        int oldY = manager->originY;
+
+        for (int frame = 1; frame <= frames; frame++) {
+            manager->originX = oldX + (int) ((long long) dx * frame / (frames + 1));
+            manager->originY = oldY + (int) ((long long) dy * frame / (frames + 1));
+
+            paint_grid(manager);
+            pan_wait(PAN_FRAME_MICROSECONDS);
+        }
+    }
+
+    manager->originX += dx;
+    manager->originY += dy;
+
+    paint_grid(manager);
 }
 
 static void append_text(char *status, size_t size, const char *text) {

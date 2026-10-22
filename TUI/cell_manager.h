@@ -26,7 +26,11 @@ typedef struct {
     struct hashmap_s map;
     TermSize size;
     TermSize cursor;
-    TermSize camera;
+    // Cuantas columnas y filas de pantalla se han desplazado de la rejilla.
+    // Va de caracter en caracter, no de celda en celda, para que al llegar al
+    // borde la vista se deslice y queden celdas cortadas a los lados.
+    int originX;
+    int originY;
     bool showValues;
     // Si la hoja cambio desde la ultima vez que se guardo.
     bool dirty;
@@ -54,6 +58,10 @@ void set_message(CellManager *manager, const char *message);
 
 void print_cell_manager(CellManager *manager);
 void print_status(CellManager *manager, const char *mode, const char *path);
+
+// Cuantos fotogramas se pintan para recorrer un desplazamiento de la vista de
+// dx columnas y dy filas. Cero es no deslizar: pintar de golpe.
+int pan_frames(int dx, int dy);
 
 // Vacia la hoja entera y olvida los cambios deshechos.
 void clear_sheet(CellManager *manager);
