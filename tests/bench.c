@@ -147,17 +147,17 @@ int main(int argc, char **argv) {
     long long neighbor = frame_us(&manager, 'l', 'h', 200);
 
     // La camara se mueve: todo el cuadro cambia de contenido.
-    manager.cursor.x = 0;
-    manager.originX = 0;
+    sheet_state(&manager)->cursor.x = 0;
+    sheet_state(&manager)->originX = 0;
     print_cell_manager(&manager);
     fflush(stdout);
 
     long long camera = frame_us(&manager, 'd', -1, 200);
 
-    manager.cursor.x = 0;
-    manager.cursor.y = 0;
-    manager.originX = 0;
-    manager.originY = 0;
+    sheet_state(&manager)->cursor.x = 0;
+    sheet_state(&manager)->cursor.y = 0;
+    sheet_state(&manager)->originX = 0;
+    sheet_state(&manager)->originY = 0;
     print_cell_manager(&manager);
     fflush(stdout);
 

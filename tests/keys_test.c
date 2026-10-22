@@ -149,14 +149,14 @@ int main(void) {
     };
 
     // Escribir una formula en A1 y confirmarla.
-    manager.cursor.x = 0;
-    manager.cursor.y = 0;
+    sheet_state(&manager)->cursor.x = 0;
+    sheet_state(&manager)->cursor.y = 0;
     type_text(&manager, &editor, "1+2");
     handle_key(&editor, &manager, KEY_ENTER);
 
     check_content(&manager, 0, 0, "1+2", "la celda tiene lo que se escribio");
     check_value(&manager, 0, 0, "3", "la celda esta calculada");
-    check(manager.cursor.y == 1, "al confirmar, el cursor baja");
+    check(sheet_state(&manager)->cursor.y == 1, "al confirmar, el cursor baja");
 
     // Antes de copiar, no hay ninguna celda marcada.
     char *screen = draw(&manager);
@@ -165,7 +165,7 @@ int main(void) {
 
     // Volver a A1 y copiarla con el Ctrl+C.
     handle_key(&editor, &manager, 'k');
-    check(manager.cursor.y == 0, "el cursor vuelve arriba");
+    check(sheet_state(&manager)->cursor.y == 0, "el cursor vuelve arriba");
 
     handle_key(&editor, &manager, KEY_CTRL_C);
 
@@ -185,7 +185,7 @@ int main(void) {
 
     // Moverse a B1 y pegar con el Ctrl+V.
     handle_key(&editor, &manager, 'l');
-    check(manager.cursor.x == 1, "el cursor se mueve a la derecha");
+    check(sheet_state(&manager)->cursor.x == 1, "el cursor se mueve a la derecha");
 
     handle_key(&editor, &manager, KEY_CTRL_V);
 
@@ -199,8 +199,8 @@ int main(void) {
 
     // Una formula que usa otra celda, pegada en otro sitio, tambien se
     // calcula.
-    manager.cursor.x = 0;
-    manager.cursor.y = 1;
+    sheet_state(&manager)->cursor.x = 0;
+    sheet_state(&manager)->cursor.y = 1;
     type_text(&manager, &editor, "A1*10");
     handle_key(&editor, &manager, KEY_ENTER);
     check_value(&manager, 0, 1, "30", "la celda que usa otra celda esta calculada");
@@ -214,10 +214,10 @@ int main(void) {
     check_value(&manager, 1, 1, "30", "la formula pegada se vuelve a calcular");
 
     // Dentro de una celda, el Ctrl+C copia el texto y no la celda.
-    manager.cursor.x = 2;
-    manager.cursor.y = 0;
+    sheet_state(&manager)->cursor.x = 2;
+    sheet_state(&manager)->cursor.y = 0;
     handle_key(&editor, &manager, 'i');
-    check(manager.editing, "la tecla i empieza a editar la celda");
+    check(sheet_state(&manager)->editing, "la tecla i empieza a editar la celda");
 
     type_text(&manager, &editor, "9");
     handle_key(&editor, &manager, KEY_CTRL_C);
@@ -238,8 +238,8 @@ int main(void) {
 
     // Un pegado de la terminal: el texto entra en la celda del cursor y la
     // hoja se vuelve a calcular.
-    manager.cursor.x = 0;
-    manager.cursor.y = 2;
+    sheet_state(&manager)->cursor.x = 0;
+    sheet_state(&manager)->cursor.y = 2;
     handle_paste(&manager, "2+3");
 
     check_content(&manager, 0, 2, "2+3", "el pegado de la terminal pone el texto en la celda");
@@ -248,8 +248,8 @@ int main(void) {
 
     // Si el texto pegado es el mismo que ya tiene el portapapeles, la celda
     // copiada sigue marcada.
-    manager.cursor.x = 0;
-    manager.cursor.y = 0;
+    sheet_state(&manager)->cursor.x = 0;
+    sheet_state(&manager)->cursor.y = 0;
     handle_key(&editor, &manager, KEY_CTRL_C);
     handle_paste(&manager, clipboard_text(&manager.clipboard));
     check(clipboard_has_cell(&manager.clipboard), "pegar lo mismo deja la celda copiada marcada");
@@ -259,13 +259,13 @@ int main(void) {
     set_cell_content(&manager, 4, 0, "");
     set_cell_content(&manager, 5, 0, "lo que sea");
 
-    manager.cursor.x = 4;
-    manager.cursor.y = 0;
+    sheet_state(&manager)->cursor.x = 4;
+    sheet_state(&manager)->cursor.y = 0;
     handle_key(&editor, &manager, KEY_CTRL_C);
     check(clipboard_has_cell(&manager.clipboard), "una celda vacia tambien se marca");
 
-    manager.cursor.x = 5;
-    manager.cursor.y = 0;
+    sheet_state(&manager)->cursor.x = 5;
+    sheet_state(&manager)->cursor.y = 0;
     handle_key(&editor, &manager, KEY_CTRL_V);
     check_content(&manager, 5, 0, "", "pegar una celda vacia vacia la celda");
 
@@ -275,7 +275,7 @@ int main(void) {
 
     handle_key(&emptyEditor, &empty, KEY_CTRL_V);
     check_message(&empty, "the clipboard is empty", "pegar sin portapapeles avisa");
-    check(!empty.dirty, "pegar sin portapapeles no cambia la hoja");
+    check(!sheet_state(&empty)->dirty, "pegar sin portapapeles no cambia la hoja");
 
     // El tamano de las celdas: los corchetes mueven el ancho y las llaves el
     // alto, y ninguna de esas teclas empieza a escribir en la celda.
@@ -289,8 +289,8 @@ int main(void) {
 
     handle_key(&sizedEditor, &sized, ']');
     check(cellWidth == baseWidth + 1, "el corchete cierra hace la celda mas ancha");
-    check(!sized.editing, "cambiar el tamano no empieza a escribir en la celda");
-    check(!sized.dirty, "cambiar el tamano no cuenta como un cambio de la hoja");
+    check(!sheet_state(&sized)->editing, "cambiar el tamano no empieza a escribir en la celda");
+    check(!sheet_state(&sized)->dirty, "cambiar el tamano no cuenta como un cambio de la hoja");
 
     handle_key(&sizedEditor, &sized, '}');
     check(cellHeight == baseHeight + 1, "la llave cierra hace la celda mas alta");
@@ -334,8 +334,8 @@ int main(void) {
     set_cell_content(&completed, 1, 1, "hombre");
 
     // Una palabra del lenguaje, que solo puede ser una.
-    completed.cursor.x = 3;
-    completed.cursor.y = 0;
+    sheet_state(&completed)->cursor.x = 3;
+    sheet_state(&completed)->cursor.y = 0;
     handle_key(&completedEditor, &completed, 'i');
     type_text(&completed, &completedEditor, "pr");
     handle_key(&completedEditor, &completed, KEY_TAB);
@@ -344,8 +344,8 @@ int main(void) {
 
     // Una palabra que ya esta en la hoja, y que tampoco tiene mas que una
     // candidata.
-    completed.cursor.x = 3;
-    completed.cursor.y = 1;
+    sheet_state(&completed)->cursor.x = 3;
+    sheet_state(&completed)->cursor.y = 1;
     handle_key(&completedEditor, &completed, 'i');
     type_text(&completed, &completedEditor, "12");
     handle_key(&completedEditor, &completed, KEY_TAB);
@@ -354,8 +354,8 @@ int main(void) {
 
     // Dos palabras que empiezan igual: el primer tabulador escribe lo que tienen
     // comun, y los siguientes van pasando por las candidatas.
-    completed.cursor.x = 3;
-    completed.cursor.y = 2;
+    sheet_state(&completed)->cursor.x = 3;
+    sheet_state(&completed)->cursor.y = 2;
     handle_key(&completedEditor, &completed, 'i');
     type_text(&completed, &completedEditor, "ho");
     handle_key(&completedEditor, &completed, KEY_TAB);
@@ -372,8 +372,8 @@ int main(void) {
     handle_key(&completedEditor, &completed, KEY_ESC);
 
     // Escribir despues de completar apaga la oferta.
-    completed.cursor.x = 3;
-    completed.cursor.y = 3;
+    sheet_state(&completed)->cursor.x = 3;
+    sheet_state(&completed)->cursor.y = 3;
     handle_key(&completedEditor, &completed, 'i');
     type_text(&completed, &completedEditor, "pr");
     handle_key(&completedEditor, &completed, KEY_TAB);
@@ -383,8 +383,8 @@ int main(void) {
     handle_key(&completedEditor, &completed, KEY_ESC);
 
     // Sin palabra escrita no hay nada que completar.
-    completed.cursor.x = 4;
-    completed.cursor.y = 3;
+    sheet_state(&completed)->cursor.x = 4;
+    sheet_state(&completed)->cursor.y = 3;
     handle_key(&completedEditor, &completed, 'i');
     handle_key(&completedEditor, &completed, KEY_TAB);
     check_content(&completed, 4, 3, "", "el tabulador no inventa nada sobre una celda vacia");
@@ -392,8 +392,8 @@ int main(void) {
 
     // Con dos candidatas la oferta se queda delante, y se puede escribir lo que
     // hay entre ellas: es lo que ve quien esta completando.
-    completed.cursor.x = 3;
-    completed.cursor.y = 5;
+    sheet_state(&completed)->cursor.x = 3;
+    sheet_state(&completed)->cursor.y = 5;
     handle_key(&completedEditor, &completed, 'i');
     type_text(&completed, &completedEditor, "h");
     handle_key(&completedEditor, &completed, KEY_TAB);
@@ -425,6 +425,84 @@ int main(void) {
     handle_key(&completedEditor, &completed, KEY_ESC);
 
     free_cell_manager(&completed);
+
+    // Las teclas de las hojas: anadir, cambiar, quitar.
+    CellManager book = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    Editor bookEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+
+    set_cell_content(&book, 0, 0, "1");
+
+    handle_key(&bookEditor, &book, KEY_CTRL_A);
+    check(sheet_count(&book) == 2, "el Ctrl+A anade una hoja");
+    check(sheet_active(&book) == 1, "el Ctrl+A se pone a ver la hoja nueva");
+    check(get_cell(&book, 0, 0) == NULL, "la hoja nueva esta vacia");
+
+    // La marca de la celda copiada es de una hoja: al cambiar se quita, pero lo
+    // copiado se queda en el portapapeles.
+    sheet_select(&book, 0);
+    handle_key(&bookEditor, &book, KEY_CTRL_C);
+    check(clipboard_has_cell(&book.clipboard), "la celda copiada queda marcada");
+
+    sheet_select(&book, 1);
+    check(!clipboard_has_cell(&book.clipboard), "cambiar de hoja quita la marca de la celda copiada");
+    check(clipboard_has_content(&book.clipboard), "cambiar de hoja no tira lo copiado");
+
+    // Tres hojas, para poder dar la vuelta a la lista.
+    handle_key(&bookEditor, &book, KEY_CTRL_A);
+    check(sheet_count(&book) == 3, "otra hoja mas");
+
+    handle_key(&bookEditor, &book, KEY_CTRL_P);
+    check(sheet_active(&book) == 1, "el Ctrl+P vuelve a la hoja de atras");
+
+    handle_key(&bookEditor, &book, KEY_CTRL_N);
+    check(sheet_active(&book) == 2, "el Ctrl+N avanza a la siguiente hoja");
+
+    handle_key(&bookEditor, &book, KEY_CTRL_N);
+    check(sheet_active(&book) == 0, "el Ctrl+N da la vuelta a la lista");
+
+    handle_key(&bookEditor, &book, KEY_CTRL_D);
+    check(sheet_count(&book) == 2, "el Ctrl+D quita la hoja que se esta viendo");
+
+    handle_key(&bookEditor, &book, KEY_CTRL_D);
+    handle_key(&bookEditor, &book, KEY_CTRL_D);
+    check(sheet_count(&book) == 1, "el Ctrl+D no quita la ultima hoja");
+    free_cell_manager(&book);
+
+    // El nombre de la hoja, en una con el nombre de empezar: el Ctrl+F escribe
+    // en la pestana, Enter lo fija y Escape lo deja como estaba.
+    CellManager named = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    Editor namedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+
+    handle_key(&namedEditor, &named, KEY_CTRL_F);
+    check(named.renaming, "el Ctrl+F empieza a escribir el nombre");
+    check(named.renameText[0] == 0, "se empieza de cero, sin el nombre viejo por delante");
+
+    type_text(&named, &namedEditor, "hoja2");
+    handle_key(&namedEditor, &named, KEY_ENTER);
+
+    check(!named.renaming, "Enter deja de escribir el nombre");
+    check(strcmp(sheet_name_at(&named, 0), "hoja2") == 0, "el nombre queda puesto");
+
+    // Escape no cambia nada, y un nombre vacio tampoco deja a la hoja sin nombre.
+    handle_key(&namedEditor, &named, KEY_CTRL_F);
+    type_text(&named, &namedEditor, "x");
+    handle_key(&namedEditor, &named, KEY_ESC);
+    check(!named.renaming, "Escape deja de escribir el nombre");
+    check(strcmp(sheet_name_at(&named, 0), "hoja2") == 0, "Escape no cambia el nombre de la hoja");
+
+    handle_key(&namedEditor, &named, KEY_CTRL_F);
+    handle_key(&namedEditor, &named, KEY_ENTER);
+    check(strcmp(sheet_name_at(&named, 0), "hoja2") == 0, "un nombre vacio no deja a la hoja sin nombre");
+
+    // Una tecla de mando corta la escritura del nombre, que era de la otra hoja.
+    handle_key(&namedEditor, &named, KEY_CTRL_A);
+    handle_key(&namedEditor, &named, KEY_CTRL_F);
+    type_text(&named, &namedEditor, "z");
+    handle_key(&namedEditor, &named, KEY_CTRL_P);
+    check(!named.renaming, "una tecla de mando corta la escritura del nombre");
+    check(strcmp(sheet_name_at(&named, 1), "Sheet2") == 0, "y lo escrito no se pone");
+
+    free_cell_manager(&named);
 
     free_cell_manager(&empty);
     free_cell_manager(&manager);

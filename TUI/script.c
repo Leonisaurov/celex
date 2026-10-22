@@ -151,7 +151,9 @@ int run_external_script(CellManager *manager, const char *interpreter, char *mes
     char *script = temp_path(".cle");
     char *errors = temp_path(".err");
 
-    if (save_file(script, manager) != FILE_LOADED) {
+    // Solo la hoja que se esta viendo: el interprete de fuera no sabe de hojas,
+    // y las celdas de otra hoja no se deben colar aqui.
+    if (save_sheet_file(script, manager) != FILE_LOADED) {
         snprintf(message, size, "cannot write the script");
         free(script);
         free(errors);

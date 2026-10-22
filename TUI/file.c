@@ -20,8 +20,36 @@ static char *trim(char *text) {
     return text;
 }
 
+// Como se marca una hoja en el archivo: una asignacion a la variable SHEET con
+// el nombre entre comillas. El lenguaje la ve como una variable mas, asi que un
+// archivo de varias hojas sigue siendo un programa valido.
+#define SHEET_VARIABLE "SHEET"
+
+// El nombre que estaba escrito en una linea `SHEET = "..."`.
+static void sheet_line_name(char *value, char *into, size_t size) {
+    char *first = strchr(value, '"');
+
+    if (first == NULL) {
+        snprintf(into, size, "%s", value);
+        return;
+    }
+
+    first++;
+
+    char *last = strrchr(first, '"');
+
+    if (last == NULL || last < first) {
+        snprintf(into, size, "%s", first);
+        return;
+    }
+
+    *last = '\0';
+    snprintf(into, size, "%s", first);
+}
+
 int load_file(const char *path, CellManager *manager, int *ignored) {
     int skipped = 0;
+    bool named = false;
 
     if (ignored != NULL) {
         *ignored = 0;
@@ -50,6 +78,23 @@ int load_file(const char *path, CellManager *manager, int *ignored) {
         char *reference = trim(text);
         char *value = trim(separator + 1);
 
+        // El principio de una hoja.
+        if (strcmp(reference, SHEET_VARIABLE) == 0) {
+            char name[SHEET_NAME_SIZE];
+            sheet_line_name(value, name, sizeof(name));
+
+            if (!named) {
+                // La primera linea le pone nombre a la hoja que ya habia, para
+                // no dejar una hoja vacia delante.
+                sheet_rename(manager, 0, name);
+                named = true;
+            } else {
+                sheet_add(manager, name);
+            }
+
+            continue;
+        }
+
         unsigned int x = 0;
         unsigned int y = 0;
         if (!ref_parse(reference, &x, &y)) {
@@ -65,6 +110,9 @@ int load_file(const char *path, CellManager *manager, int *ignored) {
     if (ignored != NULL) {
         *ignored = skipped;
     }
+
+    // Se vuelve a la primera hoja, que es la que se espera al abrir un archivo.
+    sheet_select(manager, 0);
 
     return FILE_LOADED;
 }
@@ -123,9 +171,11 @@ static int collect_entry(void *const context, struct hashmap_element_s *const el
     return 0;
 }
 
-char *sheet_source(CellManager *manager) {
+// El guion de una hoja: una linea por celda, en el orden en que se pueden
+// calcular.
+static char *state_source(SheetState *state) {
     FileEntries entries = {NULL, 0, 0};
-    hashmap_iterate_pairs(&manager->map, collect_entry, &entries);
+    hashmap_iterate_pairs(&state->map, collect_entry, &entries);
 
     qsort(entries.items, entries.count, sizeof(FileEntry), compare_entries);
 
@@ -164,21 +214,74 @@ char *sheet_source(CellManager *manager) {
     return source;
 }
 
-int save_file(const char *path, CellManager *manager) {
-    FILE *file = fopen(path, "w");
-    if (file == NULL) {
+char *sheet_source(CellManager *manager) {
+    return state_source(sheet_state(manager));
+}
+
+// El archivo entero: cada hoja empieza con su linea de nombre.
+char *workbook_source(CellManager *manager) {
+    size_t capacity = 1;
+
+    for (int i = 0; i < sheet_count(manager); i++) {
+        capacity += strlen(sheet_name_at(manager, i)) + 24;
+
+        char *part = state_source(&sheet_at(manager, i)->state);
+
+        if (part == NULL) {
+            continue;
+        }
+
+        capacity += strlen(part);
+        free(part);
+    }
+
+    char *source = (char *) malloc(capacity);
+    if (source == NULL) {
+        return NULL;
+    }
+
+    source[0] = '\0';
+
+    for (int i = 0; i < sheet_count(manager); i++) {
+        strcat(source, SHEET_VARIABLE " = \"");
+        strcat(source, sheet_name_at(manager, i));
+        strcat(source, "\"\n");
+
+        char *part = state_source(&sheet_at(manager, i)->state);
+
+        if (part != NULL) {
+            strcat(source, part);
+            free(part);
+        }
+    }
+
+    return source;
+}
+
+static int write_source(const char *path, char *source) {
+    if (source == NULL) {
         return FILE_ERROR;
     }
 
-    char *source = sheet_source(manager);
-    if (source == NULL) {
-        fclose(file);
+    FILE *file = fopen(path, "w");
+    if (file == NULL) {
+        free(source);
         return FILE_ERROR;
     }
 
     fputs(source, file);
-    free(source);
     fclose(file);
+    free(source);
 
     return FILE_LOADED;
+}
+
+int save_file(const char *path, CellManager *manager) {
+    return write_source(path, workbook_source(manager));
+}
+
+// Solo la hoja que se esta viendo, que es lo que evalua el interprete de fuera:
+// las celdas de otras hojas no pueden verse desde aqui.
+int save_sheet_file(const char *path, CellManager *manager) {
+    return write_source(path, sheet_source(manager));
 }

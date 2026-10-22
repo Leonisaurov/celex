@@ -61,16 +61,16 @@ static bool paste_text(CellManager *manager, const char *text) {
         return false;
     }
 
-    if (manager->editing) {
+    if (sheet_state(manager)->editing) {
         // Dentro de una celda: el texto entra donde esta el cursor de texto.
-        paste_cell_text(manager, manager->cursor.x, manager->cursor.y, clean);
+        paste_cell_text(manager, sheet_state(manager)->cursor.x, sheet_state(manager)->cursor.y, clean);
         free(clean);
 
         return false;
     }
 
     // En una celda: entra la formula entera y se calcula la hoja.
-    paste_cell_content(manager, manager->cursor.x, manager->cursor.y, clean);
+    paste_cell_content(manager, sheet_state(manager)->cursor.x, sheet_state(manager)->cursor.y, clean);
     free(clean);
 
     return recalculate_sheet(manager);
@@ -98,9 +98,9 @@ bool handle_paste(CellManager *manager, const char *text) {
 
 // Copia la celda del cursor, o el texto que se esta editando.
 static void copy(CellManager *manager) {
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    MetaCell *meta = get_cell(manager, sheet_state(manager)->cursor.x, sheet_state(manager)->cursor.y);
 
-    if (manager->editing) {
+    if (sheet_state(manager)->editing) {
         // Dentro de una celda se copia el texto, como en cualquier editor de
         // texto.
         const char *text = cell_content(meta);
@@ -117,10 +117,10 @@ static void copy(CellManager *manager) {
     const char *text = cell_content(meta);
     const char *value = cell_value(meta);
 
-    clipboard_set_cell(&manager->clipboard, text, value, manager->cursor.x, manager->cursor.y);
+    clipboard_set_cell(&manager->clipboard, text, value, sheet_state(manager)->cursor.x, sheet_state(manager)->cursor.y);
     system_clipboard_set(text);
 
-    char *reference = ref_to_string(manager->cursor.x, manager->cursor.y);
+    char *reference = ref_to_string(sheet_state(manager)->cursor.x, sheet_state(manager)->cursor.y);
     char message[MESSAGE_SIZE];
     snprintf(message, sizeof(message), "copied %s", reference);
     free(reference);
@@ -136,6 +136,61 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
 
     if (key != KEY_CTRL_L) {
         editor->reloading = false;
+    }
+
+    // Mientras se escribe el nombre de la hoja, lo que se teclea va al nombre:
+    // Enter lo fija y Escape lo deja como estaba. Una tecla de mando corta la
+    // escritura y se hace lo que toca, para no quedarse uno escribiendo nombres
+    // sin poder cambiar de hoja.
+    if (manager->renaming) {
+        bool writing = key == KEY_ESC || key == KEY_ENTER || key == KEY_BACKSPACE || (key >= 32 && key < 127);
+
+        if (!writing) {
+            manager->renaming = false;
+            manager->renameText[0] = '\0';
+        } else {
+            switch (key) {
+                case KEY_ESC:
+                    manager->renaming = false;
+                    set_message(manager, "");
+                    break;
+                case KEY_ENTER: {
+                    char name[SHEET_NAME_SIZE];
+                    snprintf(name, sizeof(name), "%s", manager->renameText);
+
+                    manager->renaming = false;
+
+                    if (name[0] == '\0') {
+                        set_message(manager, "the name stays");
+                    } else {
+                        sheet_rename(manager, manager->active, name);
+                        set_message(manager, name);
+                    }
+
+                    break;
+                }
+                case KEY_BACKSPACE: {
+                    size_t length = strlen(manager->renameText);
+
+                    if (length > 0) {
+                        manager->renameText[length - 1] = '\0';
+                    }
+
+                    break;
+                }
+                default: {
+                    size_t length = strlen(manager->renameText);
+
+                    if (length + 1 < sizeof(manager->renameText)) {
+                        manager->renameText[length] = (char) key;
+                        manager->renameText[length + 1] = '\0';
+                    }
+                    break;
+                }
+            }
+
+            return editor->running;
+        }
     }
 
     bool keepMessage = false;
@@ -164,13 +219,14 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
         // Recargar el archivo, por si se cambio por fuera.
         if (editor->path == NULL) {
             set_message(manager, "no file to load");
-        } else if (manager->dirty && !editor->reloading) {
+        } else if (sheet_any_dirty(manager) && !editor->reloading) {
             editor->reloading = true;
             set_message(manager, "unsaved changes: press Ctrl+L again to reload");
         } else {
             int ignored = 0;
 
-            clear_sheet(manager);
+            // Se olvida todo el archivo, no solo la hoja que se veia.
+            workbook_clear(manager);
             load_file(editor->path, manager, &ignored);
 
             editor->reloading = false;
@@ -199,15 +255,15 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
         // siempre con lo mismo.
         handle_paste(manager, get_paste_text());
         keepMessage = true;
-    } else if (manager->editing) {
+    } else if (sheet_state(manager)->editing) {
         switch (key) {
             case KEY_ESC:
-                manager->editing = false;
+                sheet_state(manager)->editing = false;
                 keepMessage = recalculate_sheet(manager);
                 break;
             case KEY_ENTER:
-                manager->editing = false;
-                if (manager->cursor.y < UINT16_MAX) manager->cursor.y++;
+                sheet_state(manager)->editing = false;
+                if (sheet_state(manager)->cursor.y < UINT16_MAX) sheet_state(manager)->cursor.y++;
                 keepMessage = recalculate_sheet(manager);
                 break;
             case KEY_BACKSPACE:
@@ -228,13 +284,13 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                 edit_to_end(manager);
                 break;
             case KEY_UP:
-                manager->editing = false;
-                if (manager->cursor.y > 0) manager->cursor.y--;
+                sheet_state(manager)->editing = false;
+                if (sheet_state(manager)->cursor.y > 0) sheet_state(manager)->cursor.y--;
                 keepMessage = recalculate_sheet(manager);
                 break;
             case KEY_DOWN:
-                manager->editing = false;
-                if (manager->cursor.y < UINT16_MAX) manager->cursor.y++;
+                sheet_state(manager)->editing = false;
+                if (sheet_state(manager)->cursor.y < UINT16_MAX) sheet_state(manager)->cursor.y++;
                 keepMessage = recalculate_sheet(manager);
                 break;
             case KEY_LEFT:
@@ -255,7 +311,7 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
         switch (key) {
             case 'q':
                 // Si hay cambios sin guardar se pide confirmacion.
-                if (manager->dirty && !editor->quitting) {
+                if (sheet_any_dirty(manager) && !editor->quitting) {
                     editor->quitting = true;
                     set_message(manager, "unsaved changes: press q again to quit");
                     keepMessage = true;
@@ -266,33 +322,33 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
             case 'h':
             case 'a':
             case KEY_LEFT:
-                if (manager->cursor.x > 0) manager->cursor.x--;
+                if (sheet_state(manager)->cursor.x > 0) sheet_state(manager)->cursor.x--;
                 break;
             case 'l':
             case 'd':
             case KEY_RIGHT:
-                if (manager->cursor.x < UINT16_MAX) manager->cursor.x++;
+                if (sheet_state(manager)->cursor.x < UINT16_MAX) sheet_state(manager)->cursor.x++;
                 break;
             case 'k':
             case 'w':
             case KEY_UP:
-                if (manager->cursor.y > 0) manager->cursor.y--;
+                if (sheet_state(manager)->cursor.y > 0) sheet_state(manager)->cursor.y--;
                 break;
             case 'j':
             case 's':
             case KEY_DOWN:
-                if (manager->cursor.y < UINT16_MAX) manager->cursor.y++;
+                if (sheet_state(manager)->cursor.y < UINT16_MAX) sheet_state(manager)->cursor.y++;
                 break;
             case 'i':
             case KEY_ENTER:
                 // Se edita el contenido que ya tiene la celda, con el
                 // cursor de texto al final.
-                manager->editing = true;
+                sheet_state(manager)->editing = true;
                 edit_reset(manager);
                 break;
             case 'x':
             case KEY_DELETE:
-                clear_cell(manager, manager->cursor.x, manager->cursor.y);
+                clear_cell(manager, sheet_state(manager)->cursor.x, sheet_state(manager)->cursor.y);
                 keepMessage = recalculate_sheet(manager);
                 break;
             case 'v':
@@ -324,6 +380,46 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
 
                 keepMessage = true;
                 break;
+            case KEY_CTRL_N:
+                // Las hojas: la siguiente y la anterior, dando la vuelta.
+                sheet_select(manager, (manager->active + 1) % sheet_count(manager));
+                set_message(manager, sheet_name_at(manager, manager->active));
+                keepMessage = true;
+                break;
+            case KEY_CTRL_P:
+                sheet_select(manager, (manager->active + sheet_count(manager) - 1) % sheet_count(manager));
+                set_message(manager, sheet_name_at(manager, manager->active));
+                keepMessage = true;
+                break;
+            case KEY_CTRL_A:
+                // Una hoja nueva detras de esta, con el nombre de encima.
+                if (sheet_add(manager, NULL) >= 0) {
+                    set_message(manager, sheet_name_at(manager, manager->active));
+                } else {
+                    set_error_message(manager, "cannot add a sheet");
+                }
+
+                keepMessage = true;
+                break;
+            case KEY_CTRL_D:
+                if (sheet_count(manager) <= 1) {
+                    set_message(manager, "the last sheet stays");
+                } else {
+                    sheet_remove(manager, manager->active);
+                    set_message(manager, "sheet removed");
+                }
+
+                keepMessage = true;
+                break;
+            case KEY_CTRL_F:
+                // El nombre de la hoja que se esta viendo, escrito en la propia
+                // pestana. Se empieza de cero: el nombre viejo se deja atras
+                // hasta que Enter lo cambie.
+                manager->renaming = true;
+                manager->renameText[0] = '\0';
+                set_message(manager, "new name: Enter to set, Esc to leave");
+                keepMessage = true;
+                break;
             case KEY_CTRL_R: {
                 char message[MESSAGE_SIZE];
                 int status = run_script(manager, message, MESSAGE_SIZE);
@@ -347,7 +443,7 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                     set_message(manager, "no file to save");
                 } else if (save_file(editor->path, manager) == FILE_LOADED) {
                     set_message(manager, "saved");
-                    manager->dirty = false;
+                    sheet_mark_saved(manager);
                     keepMessage = true;
                 } else {
                     set_error_message(manager, "cannot write file");
@@ -358,8 +454,8 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                 if (key >= 32 && key < 127) {
                     // Una tecla cualquiera empieza a editar la celda, y
                     // reemplaza su contenido.
-                    manager->editing = true;
-                    clear_cell(manager, manager->cursor.x, manager->cursor.y);
+                    sheet_state(manager)->editing = true;
+                    clear_cell(manager, sheet_state(manager)->cursor.x, sheet_state(manager)->cursor.y);
 
                     char character = (char) key;
                     edit_insert(manager, &character, 1);

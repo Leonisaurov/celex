@@ -204,6 +204,10 @@ the keyboard, so a slow frame is a key that answers late.
 | `}` `{`            | taller or shorter cells                   |
 | `Ctrl+R`           | evaluate the sheet                        |
 | `Ctrl+T`           | change the colors of the editor           |
+| `Ctrl+N` `Ctrl+P`  | the next sheet, the previous one          |
+| `Ctrl+A`           | add a sheet after the one being seen      |
+| `Ctrl+D`           | remove the sheet being seen               |
+| `Ctrl+F`           | write the name of the sheet being seen    |
 | `Ctrl+S`           | save the sheet into the opened file       |
 | `Ctrl+Z`           | undo the last change                      |
 | `Ctrl+Y`           | redo the change that was undone           |
@@ -289,6 +293,24 @@ style it is drawn with, and only the cells whose character or style changed are
 written again. Two styles that paint the same thing are written as one sequence,
 which is what keeps a frame with no color as small as it was before the colors
 existed.
+
+The file has sheets, and the sheets have their own row of tabs above the status
+bar. `Ctrl+A` puts a new sheet after the one being seen, `Ctrl+N` and `Ctrl+P`
+go around the list, `Ctrl+D` takes the one being seen away — the last sheet is
+never taken, because a file without sheets is not a file — and `Ctrl+F` writes a
+name in the tab, with `Enter` to set it and `Esc` to leave it. Names are not
+repeated: a sheet is never given a name another one already has, and a new sheet
+takes the first free number.
+
+Each sheet keeps its own cells, its own cursor, its own slide of the view and its
+own undo history, so going back to a sheet finds it as it was left. Copying is
+the exception: what is copied is copied for the whole file, like in a spreadsheet,
+but the dashed mark of the copied cell belongs to one sheet, so it goes away when
+the sheet changes. When there are more sheets than fit, the tabs are cut, but
+never the one being seen: it stays in the middle of the row and a `<` says that
+there are more to the left.
+
+Saving writes all the sheets, and "unsaved changes" means any of them.
 
 The status bar starts with the number of the build, so it is always clear
 which binary is being used. It is the commit of the repository, with a `+`
@@ -393,15 +415,24 @@ while total < 100 {
 
 A `.cle` file is Celex Script source. Every line assigns the source of a
 cell to the cell it belongs to, addressed with the usual spreadsheet
-reference (`A1`, `B2`, `AA10`):
+reference (`A1`, `B2`, `AA10`), and every sheet starts with a line that gives
+its name:
 
 ```
+SHEET = "Sheet1"
 A1 = 1
 A2 = 2
 B1 = A1 + A2
 C1 = "hola"
+
+SHEET = "gastos"
+A1 = 30
 ```
 
+- The name line is an assignment to a variable called `SHEET`, so the file stays
+  a valid Celex Script program: the language sees a variable, the editor sees the
+  beginning of a sheet. A file without any name line is one sheet, which is what
+  the files had before the sheets existed.
 - The reference is scanned as a cell reference (`TOKEN_REF`) by the scanner,
   `=` as an assignment and the right hand side as the expression of the
   cell, so the file is valid Celex Script.
@@ -481,3 +512,10 @@ under the hood:
 With `--values` the output of the program goes to stderr and stdout only
 carries the resulting cells, one per line, with the same format the editor
 reads.
+
+The interpreter runs the whole file as one program, so on a file with sheets it
+sees the cells of all of them together: the `SHEET` lines are only names, and a
+reference written in two sheets is one reference for the interpreter. The editor
+does not have that mixing, because it evaluates one sheet at a time — the one
+being seen — and writes only that sheet when it calls the interpreter. To run a
+single sheet outside the editor, take its lines out of the file.

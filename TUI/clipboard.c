@@ -105,6 +105,14 @@ bool clipboard_has_cell(const Clipboard *clipboard) {
     return clipboard->hasCell;
 }
 
+// Se quita la marca de la celda copiada, dejando lo copiado. Es lo que pasa al
+// cambiar de hoja: la celda de otra hoja no se puede marcar aqui.
+void clipboard_forget_cell(Clipboard *clipboard) {
+    clipboard->hasCell = false;
+    clipboard->cellX = 0;
+    clipboard->cellY = 0;
+}
+
 void clipboard_cell(const Clipboard *clipboard, unsigned int *x, unsigned int *y) {
     if (x != NULL) {
         *x = clipboard->cellX;

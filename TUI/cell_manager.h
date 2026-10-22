@@ -39,32 +39,91 @@ typedef struct {
     size_t capacity;
 } History;
 
+// Lo que es propio de una hoja: sus celdas, donde esta el cursor, cuanto se
+// deslizo la vista y lo que se puede deshacer. Una hoja no depende de las demas,
+// y por eso cambia de una a otra sin perder nada.
 typedef struct {
     struct hashmap_s map;
-    TermSize size;
     TermSize cursor;
     // Cuantas columnas y filas de pantalla se han desplazado de la rejilla.
     // Va de caracter en caracter, no de celda en celda, para que al llegar al
     // borde la vista se deslice y queden celdas cortadas a los lados.
     int originX;
     int originY;
-    bool showValues;
-    // Si la hoja cambio desde la ultima vez que se guardo.
-    bool dirty;
     // Si se esta editando el contenido de una celda.
     bool editing;
     // Donde esta el cursor de texto dentro del contenido, en bytes.
     size_t editOffset;
+    // Si la hoja cambio desde la ultima vez que se guardo.
+    bool dirty;
+    History undo;
+    History redo;
+} SheetState;
+
+// Lo que puede pesar el nombre de una hoja.
+#define SHEET_NAME_SIZE 24
+
+typedef struct {
+    char name[SHEET_NAME_SIZE];
+    SheetState state;
+} Sheet;
+
+typedef struct {
+    // Las hojas del archivo, con la que se esta viendo en el numero active.
+    Sheet *sheets;
+    size_t sheetCount;
+    size_t sheetCapacity;
+    int active;
+
+    // Lo que es de la pantalla, y no de una hoja.
+    TermSize size;
+    bool showValues;
     char message[MESSAGE_SIZE];
     // Si lo que dice la barra es un error, y no un aviso normal.
     bool messageIsError;
-    History undo;
-    History redo;
-    // El portapapeles del editor: lo que se copia y lo que se pega.
+    // El portapapeles del editor: lo que se copia y lo que se pega. Es uno solo
+    // para todas las hojas, como en una hoja de calculo de verdad.
     Clipboard clipboard;
     // Lo que ofrece el tabulador.
     Completion completion;
+    // Si se esta escribiendo el nombre de la hoja que se ve, con el Ctrl+F. El
+    // texto se escribe al final, y se fija con Enter o se deja con Escape.
+    bool renaming;
+    char renameText[SHEET_NAME_SIZE];
 } CellManager;
+
+// La hoja que se esta viendo, y su estado. Todo lo que es de una hoja se mira
+// aqui: las celdas, el cursor, la vista y el historial.
+Sheet *current_sheet(CellManager *manager);
+SheetState *sheet_state(CellManager *manager);
+
+// La hoja numero index, o NULL si el numero no es de ninguna.
+Sheet *sheet_at(CellManager *manager, int index);
+
+// Cuantas hojas hay, cual se esta viendo, y como se llama la numero index.
+int sheet_count(CellManager *manager);
+int sheet_active(CellManager *manager);
+const char *sheet_name_at(CellManager *manager, int index);
+
+// Pone a ver la hoja numero index. La que estaba se queda con sus cambios, su
+// cursor y su historial de deshacer.
+void sheet_select(CellManager *manager, int index);
+
+// Mete una hoja nueva despues de la que se esta viendo y se pone a verla.
+// Devuelve el numero de la hoja nueva, o -1 si no se pudo.
+int sheet_add(CellManager *manager, const char *name);
+
+// Quita la hoja numero index, y se pone a ver la vecina. La ultima hoja no se
+// quita: una hoja de calculo sin hojas no es una hoja de calculo.
+void sheet_remove(CellManager *manager, int index);
+
+// Cambia el nombre de la hoja numero index.
+void sheet_rename(CellManager *manager, int index, const char *name);
+
+// Si alguna hoja tiene cambios sin guardar, y como marcarlas todas guardadas,
+// que es lo que son despues de escribir el archivo entero.
+bool sheet_any_dirty(CellManager *manager);
+void sheet_mark_saved(CellManager *manager);
 
 CellManager new_cell_manager(TermSize size);
 void free_cell_manager(CellManager *manager);
@@ -83,6 +142,14 @@ void set_error_message(CellManager *manager, const char *message);
 void print_cell_manager(CellManager *manager);
 void print_status(CellManager *manager, const char *mode, const char *path);
 
+// La fila de las pestañas de las hojas.
+void print_sheets(CellManager *manager);
+
+// Que pestañas caben en una fila de `width` columnas, con `sizes` como lo que
+// pesa el nombre de cada una de las `count` hojas y `active` como la que se esta
+// viendo. Van de `first` hasta `last`, sin incluir `last`.
+void sheet_bar_range(const int *sizes, int count, int active, int width, int *first, int *last);
+
 // Cuantos fotogramas se pintan para recorrer un desplazamiento de la vista de
 // dx columnas y dy filas. Cero es no deslizar: pintar de golpe.
 int pan_frames(int dx, int dy);
@@ -96,6 +163,9 @@ void invalidate_screen(void);
 
 // Vacia la hoja entera y olvida los cambios deshechos.
 void clear_sheet(CellManager *manager);
+
+// Deja el archivo con una sola hoja vacia, como al abrirlo.
+void workbook_clear(CellManager *manager);
 
 // Deshace el ultimo cambio y rehace el que se deshizo.
 void undo_edit(CellManager *manager);

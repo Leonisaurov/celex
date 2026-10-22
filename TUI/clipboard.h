@@ -41,6 +41,9 @@ bool clipboard_has_content(const Clipboard *clipboard);
 bool clipboard_has_cell(const Clipboard *clipboard);
 void clipboard_cell(const Clipboard *clipboard, unsigned int *x, unsigned int *y);
 
+// Se olvida de que celda se copio, dejando lo copiado.
+void clipboard_forget_cell(Clipboard *clipboard);
+
 // Si el portapapeles tiene exactamente ese texto.
 bool clipboard_is_text(const Clipboard *clipboard, const char *text);
 

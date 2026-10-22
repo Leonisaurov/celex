@@ -24,6 +24,15 @@
 // El fotograma anterior, para redibujar solo lo que cambio.
 static void free_previous(void);
 
+// Hacen falta antes de estar definidas: soltar las celdas de una hoja y cambiar
+// de hoja.
+static int free_cell_entry(void *const context, struct hashmap_element_s *const element);
+void sheet_select(CellManager *manager, int index);
+
+// La hoja que se esta viendo, en las funciones que tienen el gestor a mano. Todo
+// lo que es propio de una hoja (celdas, cursor, vista, historial) se mira aqui.
+#define SHEET (sheet_state(manager))
+
 // El margen de la izquierda: las cuatro primeras columnas son para el numero
 // de fila y la quinta queda de aire, para que una celda cortada por la
 // izquierda no se pegue al numero.
@@ -32,6 +41,10 @@ static void free_previous(void);
 #define STRIDE_X (CELL_SIZE_X + 1)
 #define STRIDE_Y (CELL_SIZE_Y + 1)
 #define STATUS_HEIGHT 1
+// Las hojas tambien tienen su fila, encima de la barra de estado.
+#define SHEET_BAR_HEIGHT 1
+// La primera fila que ya no es de la rejilla.
+#define GRID_BOTTOM(height) ((height) - STATUS_HEIGHT - SHEET_BAR_HEIGHT)
 
 // La pantalla se dibuja por columnas, no por bytes: un caracter de la caja
 // ocupa tres bytes en UTF-8 pero una sola columna. Cada celda del buffer
@@ -254,45 +267,45 @@ static void drop_completion(CellManager *manager) {
 }
 
 void edit_reset(CellManager *manager) {
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    MetaCell *meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
 
-    manager->editOffset = strlen(cell_content(meta));
+    SHEET->editOffset = strlen(cell_content(meta));
 
     drop_completion(manager);
 }
 
 void edit_move_cursor(CellManager *manager, int delta) {
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    MetaCell *meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
     const char *content = cell_content(meta);
 
     if (delta < 0) {
-        manager->editOffset = previous_offset(content, manager->editOffset);
+        SHEET->editOffset = previous_offset(content, SHEET->editOffset);
     } else {
-        manager->editOffset = next_offset(content, manager->editOffset);
+        SHEET->editOffset = next_offset(content, SHEET->editOffset);
     }
 }
 
 void edit_to_start(CellManager *manager) {
-    manager->editOffset = 0;
+    SHEET->editOffset = 0;
 }
 
 void edit_to_end(CellManager *manager) {
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    MetaCell *meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
 
-    manager->editOffset = strlen(cell_content(meta));
+    SHEET->editOffset = strlen(cell_content(meta));
 }
 
 void edit_insert(CellManager *manager, const char *text, size_t length) {
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    MetaCell *meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
 
     drop_completion(manager);
 
     if (meta == NULL) {
         // La celda todavia no existe: se crea vacia para poder escribir en
         // ella.
-        set_cell_content(manager, manager->cursor.x, manager->cursor.y, "");
+        set_cell_content(manager, SHEET->cursor.x, SHEET->cursor.y, "");
 
-        meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+        meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
         if (meta == NULL) {
             return;
         }
@@ -300,37 +313,37 @@ void edit_insert(CellManager *manager, const char *text, size_t length) {
 
     char *old = duplicate_text(cell_content(meta));
 
-    insert_cell_text(meta, manager->editOffset, text, length);
-    manager->editOffset += length;
+    insert_cell_text(meta, SHEET->editOffset, text, length);
+    SHEET->editOffset += length;
 
-    record_change(manager, manager->cursor.x, manager->cursor.y, old);
+    record_change(manager, SHEET->cursor.x, SHEET->cursor.y, old);
 
     free(old);
 }
 
 void edit_backspace(CellManager *manager) {
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    MetaCell *meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
 
     drop_completion(manager);
 
-    if (meta == NULL || manager->editOffset == 0) {
+    if (meta == NULL || SHEET->editOffset == 0) {
         return;
     }
 
-    size_t from = previous_offset(cell_content(meta), manager->editOffset);
+    size_t from = previous_offset(cell_content(meta), SHEET->editOffset);
 
     char *old = duplicate_text(cell_content(meta));
 
-    delete_cell_text(meta, from, manager->editOffset - from);
-    manager->editOffset = from;
+    delete_cell_text(meta, from, SHEET->editOffset - from);
+    SHEET->editOffset = from;
 
-    record_change(manager, manager->cursor.x, manager->cursor.y, old);
+    record_change(manager, SHEET->cursor.x, SHEET->cursor.y, old);
 
     free(old);
 }
 
 void edit_delete(CellManager *manager) {
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    MetaCell *meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
 
     drop_completion(manager);
 
@@ -339,17 +352,17 @@ void edit_delete(CellManager *manager) {
     }
 
     const char *content = cell_content(meta);
-    size_t to = next_offset(content, manager->editOffset);
+    size_t to = next_offset(content, SHEET->editOffset);
 
-    if (to == manager->editOffset) {
+    if (to == SHEET->editOffset) {
         return;
     }
 
     char *old = duplicate_text(content);
 
-    delete_cell_text(meta, manager->editOffset, to - manager->editOffset);
+    delete_cell_text(meta, SHEET->editOffset, to - SHEET->editOffset);
 
-    record_change(manager, manager->cursor.x, manager->cursor.y, old);
+    record_change(manager, SHEET->cursor.x, SHEET->cursor.y, old);
 
     free(old);
 }
@@ -444,37 +457,37 @@ static void complete_lookup(CellManager *manager, const char *prefix, CompleteLi
 
     CompleteCollect collect = { prefix, list };
 
-    hashmap_iterate_pairs(&manager->map, collect_word, &collect);
+    hashmap_iterate_pairs(&SHEET->map, collect_word, &collect);
 }
 
 // Cambia la palabra que se esta escribiendo por otra.
 static void complete_replace(CellManager *manager, size_t from, const char *word) {
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    MetaCell *meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
     const char *text = cell_content(meta);
 
     char *old = duplicate_text(text);
 
-    delete_cell_text(meta, from, manager->editOffset - from);
+    delete_cell_text(meta, from, SHEET->editOffset - from);
     insert_cell_text(meta, from, word, strlen(word));
-    manager->editOffset = from + strlen(word);
+    SHEET->editOffset = from + strlen(word);
 
-    record_change(manager, manager->cursor.x, manager->cursor.y, old);
+    record_change(manager, SHEET->cursor.x, SHEET->cursor.y, old);
 
     free(old);
 }
 
 void complete_tab(CellManager *manager) {
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    MetaCell *meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
     const char *text = cell_content(meta);
 
     Completion *completion = &manager->completion;
 
     // Sin oferta delante: se busca la palabra y lo que pueda completarse.
     if (!completion->active) {
-        size_t start = word_start(text, manager->editOffset);
+        size_t start = word_start(text, SHEET->editOffset);
 
         char prefix[COMPLETE_WORD];
-        word_between(text, start, manager->editOffset, prefix, sizeof(prefix));
+        word_between(text, start, SHEET->editOffset, prefix, sizeof(prefix));
 
         CompleteList list;
         complete_lookup(manager, prefix, &list);
@@ -568,15 +581,15 @@ static void invalidate_value(CellManager *manager, unsigned int x, unsigned int 
 // juntan, para que escribir una palabra sea un solo paso de deshacer.
 static void record_change(CellManager *manager, unsigned int x, unsigned int y, const char *oldContent) {
     // Un cambio nuevo descarta lo que se iba a rehacer.
-    history_clear(&manager->redo);
+    history_clear(&SHEET->redo);
 
-    manager->dirty = true;
+    SHEET->dirty = true;
 
     // El valor viejo ya no vale.
     invalidate_value(manager, x, y);
 
-    if (manager->undo.count > 0) {
-        HistoryEntry *last = &manager->undo.items[manager->undo.count - 1];
+    if (SHEET->undo.count > 0) {
+        HistoryEntry *last = &SHEET->undo.items[SHEET->undo.count - 1];
 
         if (last->x == x && last->y == y) {
             free(last->newContent);
@@ -586,7 +599,7 @@ static void record_change(CellManager *manager, unsigned int x, unsigned int y, 
         }
     }
 
-    history_push(&manager->undo, x, y, oldContent, content_of(manager, x, y));
+    history_push(&SHEET->undo, x, y, oldContent, content_of(manager, x, y));
 }
 
 static int clear_cell_content(void *const context, struct hashmap_element_s *const element) {
@@ -601,23 +614,23 @@ static int clear_cell_content(void *const context, struct hashmap_element_s *con
 }
 
 void clear_sheet(CellManager *manager) {
-    hashmap_iterate_pairs(&manager->map, clear_cell_content, NULL);
+    hashmap_iterate_pairs(&SHEET->map, clear_cell_content, NULL);
 
-    history_clear(&manager->undo);
-    history_clear(&manager->redo);
+    history_clear(&SHEET->undo);
+    history_clear(&SHEET->redo);
 
-    manager->dirty = false;
-    manager->editing = false;
-    manager->editOffset = 0;
+    SHEET->dirty = false;
+    SHEET->editing = false;
+    SHEET->editOffset = 0;
 }
 
 void undo_edit(CellManager *manager) {
-    if (manager->undo.count == 0) {
+    if (SHEET->undo.count == 0) {
         return;
     }
 
-    HistoryEntry *entry = &manager->undo.items[manager->undo.count - 1];
-    manager->undo.count--;
+    HistoryEntry *entry = &SHEET->undo.items[SHEET->undo.count - 1];
+    SHEET->undo.count--;
 
     // Se vuelve al contenido anterior.
     set_cell_content(manager, entry->x, entry->y, entry->oldContent);
@@ -626,22 +639,22 @@ void undo_edit(CellManager *manager) {
     invalidate_value(manager, entry->x, entry->y);
 
     // El cursor de texto se queda al final del contenido nuevo.
-    manager->editOffset = strlen(entry->oldContent);
+    SHEET->editOffset = strlen(entry->oldContent);
 
     // El cambio se puede rehacer.
-    history_push(&manager->redo, entry->x, entry->y, entry->oldContent, entry->newContent);
+    history_push(&SHEET->redo, entry->x, entry->y, entry->oldContent, entry->newContent);
 
     free(entry->oldContent);
     free(entry->newContent);
 }
 
 void redo_edit(CellManager *manager) {
-    if (manager->redo.count == 0) {
+    if (SHEET->redo.count == 0) {
         return;
     }
 
-    HistoryEntry *entry = &manager->redo.items[manager->redo.count - 1];
-    manager->redo.count--;
+    HistoryEntry *entry = &SHEET->redo.items[SHEET->redo.count - 1];
+    SHEET->redo.count--;
 
     // Se vuelve al contenido nuevo.
     set_cell_content(manager, entry->x, entry->y, entry->newContent);
@@ -650,20 +663,20 @@ void redo_edit(CellManager *manager) {
     invalidate_value(manager, entry->x, entry->y);
 
     // El cursor de texto se queda al final del contenido nuevo.
-    manager->editOffset = strlen(entry->newContent);
+    SHEET->editOffset = strlen(entry->newContent);
 
-    history_push(&manager->undo, entry->x, entry->y, entry->oldContent, entry->newContent);
+    history_push(&SHEET->undo, entry->x, entry->y, entry->oldContent, entry->newContent);
 
     free(entry->oldContent);
     free(entry->newContent);
 }
 
 bool can_undo(CellManager *manager) {
-    return manager->undo.count > 0;
+    return SHEET->undo.count > 0;
 }
 
 bool can_redo(CellManager *manager) {
-    return manager->redo.count > 0;
+    return SHEET->redo.count > 0;
 }
 
 // El portapapeles del editor vive en el gestor de celdas, para que el editor
@@ -698,8 +711,8 @@ void paste_cell_text(CellManager *manager, unsigned int x, unsigned int y, const
     char* old = duplicate_text(cell_content(meta));
 
     // El texto entra donde esta el cursor de la celda.
-    insert_cell_text(meta, manager->editOffset, text, strlen(text));
-    manager->editOffset += strlen(text);
+    insert_cell_text(meta, SHEET->editOffset, text, strlen(text));
+    SHEET->editOffset += strlen(text);
 
     record_change(manager, x, y, old);
 
@@ -723,38 +736,261 @@ void edit_cell_content(CellManager *manager, unsigned int x, unsigned int y, con
     free(old);
 }
 
-CellManager new_cell_manager(TermSize size) {
-    CellManager manager;
-    manager.size = size;
-    manager.cursor = (TermSize) {
-        .x = 0,
-        .y = 0,
-    };
-    manager.originX = 0;
-    manager.originY = 0;
-    manager.message[0] = '\0';
-    manager.messageIsError = false;
-    manager.showValues = false;
-    manager.dirty = false;
-    manager.editing = false;
-    manager.editOffset = 0;
-    manager.undo.items = NULL;
-    manager.undo.count = 0;
-    manager.undo.capacity = 0;
-    manager.redo.items = NULL;
-    manager.redo.count = 0;
-    manager.redo.capacity = 0;
-    clipboard_init(&manager.clipboard);
+// El estado de una hoja recien hecha: vacia, con el cursor en A1, la vista sin
+// deslizar y nada que deshacer.
+static SheetState new_sheet_state(void) {
+    SheetState state;
 
-    manager.completion.active = false;
-    manager.completion.start = 0;
-    manager.completion.origin[0] = '\0';
-    manager.completion.list.count = 0;
-    manager.completion.index = 0;
+    memset(&state, 0, sizeof(state));
 
-    if (0 != hashmap_create(35, &manager.map)) {
+    if (0 != hashmap_create(35, &state.map)) {
         // TODO! Error Handeling
     }
+
+    return state;
+}
+
+Sheet *current_sheet(CellManager *manager) {
+    return &manager->sheets[manager->active];
+}
+
+// La hoja numero index, para mirar su nombre o su estado sin estar viendola.
+Sheet *sheet_at(CellManager *manager, int index) {
+    if (index < 0 || (size_t) index >= manager->sheetCount) {
+        return NULL;
+    }
+
+    return &manager->sheets[index];
+}
+
+SheetState *sheet_state(CellManager *manager) {
+    return &manager->sheets[manager->active].state;
+}
+
+int sheet_count(CellManager *manager) {
+    return (int) manager->sheetCount;
+}
+
+int sheet_active(CellManager *manager) {
+    return manager->active;
+}
+
+const char *sheet_name_at(CellManager *manager, int index) {
+    if (index < 0 || (size_t) index >= manager->sheetCount) {
+        return "";
+    }
+
+    return manager->sheets[index].name;
+}
+
+// Se sueltan las celdas de una hoja y sus historiales.
+static void sheet_destroy(SheetState *state) {
+    hashmap_iterate_pairs(&state->map, free_cell_entry, NULL);
+    hashmap_destroy(&state->map);
+
+    history_clear(&state->undo);
+    history_clear(&state->redo);
+
+    memset(state, 0, sizeof(*state));
+}
+
+// Si alguna hoja, menos el hueco numero excepto, se llama ya asi.
+static bool sheet_name_taken(CellManager *manager, const char *name, int except) {
+    for (size_t i = 0; i < manager->sheetCount; i++) {
+        if ((int) i != except && strcmp(manager->sheets[i].name, name) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Mete una hoja en el hueco numero index, moviendo las de detras. Devuelve el
+// hueco, o -1 si no hubo sitio.
+static int sheet_insert(CellManager *manager, int index, const char *name) {
+    if (index < 0 || (size_t) index > manager->sheetCount) {
+        index = (int) manager->sheetCount;
+    }
+
+    if (manager->sheetCount == manager->sheetCapacity) {
+        size_t capacity = manager->sheetCapacity == 0 ? 4 : manager->sheetCapacity * 2;
+        Sheet *sheets = (Sheet *) realloc(manager->sheets, capacity * sizeof(Sheet));
+        if (sheets == NULL) {
+            return -1;
+        }
+
+        manager->sheets = sheets;
+        manager->sheetCapacity = capacity;
+    }
+
+    for (size_t i = manager->sheetCount; i > (size_t) index; i--) {
+        manager->sheets[i] = manager->sheets[i - 1];
+    }
+
+    memset(&manager->sheets[index], 0, sizeof(Sheet));
+
+    if (name == NULL || name[0] == '\0') {
+        // El nombre de encima, sin repetir ninguno de los que ya hay: dos hojas
+        // con el mismo nombre no se pueden distinguir en las pestanas.
+        int number = (int) manager->sheetCount + 1;
+
+        do {
+            snprintf(manager->sheets[index].name, SHEET_NAME_SIZE, "Sheet%d", number++);
+        } while (sheet_name_taken(manager, manager->sheets[index].name, index));
+    } else {
+        snprintf(manager->sheets[index].name, SHEET_NAME_SIZE, "%s", name);
+    }
+
+    manager->sheets[index].state = new_sheet_state();
+    manager->sheetCount++;
+
+    // Las hojas que estaban detras del hueco suben un numero, y la que se esta
+    // viendo tambien.
+    if (index <= manager->active) {
+        manager->active++;
+    }
+
+    return index;
+}
+
+int sheet_add(CellManager *manager, const char *name) {
+    // La hoja nueva va justo detras de la que se esta viendo, que es donde se
+    // espera en una hoja de calculo.
+    int index = sheet_insert(manager, manager->active + 1, name);
+
+    if (index < 0) {
+        return -1;
+    }
+
+    sheet_select(manager, index);
+
+    return index;
+}
+
+void sheet_rename(CellManager *manager, int index, const char *name) {
+    if (index < 0 || (size_t) index >= manager->sheetCount || name == NULL || name[0] == '\0') {
+        return;
+    }
+
+    // Dos hojas con el mismo nombre no se pueden distinguir en las pestanas.
+    if (sheet_name_taken(manager, name, index)) {
+        return;
+    }
+
+    snprintf(manager->sheets[index].name, SHEET_NAME_SIZE, "%s", name);
+
+    invalidate_screen();
+}
+
+void sheet_select(CellManager *manager, int index) {
+    if (index < 0 || (size_t) index >= manager->sheetCount || index == manager->active) {
+        return;
+    }
+
+    manager->active = index;
+
+    // El nombre que se estuviera escribiendo era de la otra hoja.
+    manager->renaming = false;
+    manager->renameText[0] = '\0';
+
+    SheetState *state = sheet_state(manager);
+
+    // La hoja que se coge no viene editando, y la oferta de palabras del
+    // tabulador era de la otra hoja.
+    state->editing = false;
+    state->editOffset = 0;
+
+    manager->completion.active = false;
+    manager->completion.list.count = 0;
+
+    // La marca de la celda copiada es de una hoja: al cambiar se quita, aunque
+    // el portapapeles se quede con lo copiado.
+    clipboard_forget_cell(&manager->clipboard);
+
+    invalidate_screen();
+}
+
+void sheet_remove(CellManager *manager, int index) {
+    // La ultima hoja no se quita: una hoja de calculo sin hojas no es una hoja
+    // de calculo.
+    if (index < 0 || (size_t) index >= manager->sheetCount || manager->sheetCount <= 1) {
+        return;
+    }
+
+    sheet_destroy(&manager->sheets[index].state);
+
+    for (size_t i = (size_t) index; i + 1 < manager->sheetCount; i++) {
+        manager->sheets[i] = manager->sheets[i + 1];
+    }
+
+    manager->sheetCount--;
+
+    if (index < manager->active) {
+        manager->active--;
+    } else if (manager->active >= (int) manager->sheetCount) {
+        manager->active = (int) manager->sheetCount - 1;
+    }
+
+    sheet_state(manager)->editing = false;
+    manager->completion.active = false;
+
+    clipboard_forget_cell(&manager->clipboard);
+    invalidate_screen();
+}
+
+// Alguna hoja tiene cambios sin guardar, aunque no sean de la que se esta
+// viendo.
+bool sheet_any_dirty(CellManager *manager) {
+    for (int i = 0; i < sheet_count(manager); i++) {
+        if (manager->sheets[i].state.dirty) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Todas las hojas pasan a estar guardadas, que es lo que son despues de escribir
+// el archivo entero.
+void sheet_mark_saved(CellManager *manager) {
+    for (size_t i = 0; i < manager->sheetCount; i++) {
+        manager->sheets[i].state.dirty = false;
+    }
+}
+
+// Deja el archivo como estaba al abrirse: una sola hoja, sin celdas y con el
+// nombre de empezar. Es lo que hace falta antes de volver a leer el archivo,
+// porque lo que habia puede ser de mas hojas.
+void workbook_clear(CellManager *manager) {
+    while (manager->sheetCount > 1) {
+        sheet_remove(manager, (int) manager->sheetCount - 1);
+    }
+
+    sheet_select(manager, 0);
+    clear_sheet(manager);
+
+    strcpy(manager->sheets[0].name, "Sheet1");
+
+    invalidate_screen();
+}
+
+CellManager new_cell_manager(TermSize size) {
+    CellManager manager;
+
+    memset(&manager, 0, sizeof(manager));
+
+    manager.size = size;
+    clipboard_init(&manager.clipboard);
+
+    // Se empieza con una sola hoja, y la ultima no se puede quitar: el gestor
+    // siempre tiene una que ver.
+    manager.sheetCapacity = 4;
+    manager.sheets = (Sheet *) calloc(manager.sheetCapacity, sizeof(Sheet));
+    manager.sheetCount = 1;
+    manager.active = 0;
+
+    strcpy(manager.sheets[0].name, "Sheet1");
+    manager.sheets[0].state = new_sheet_state();
 
     return manager;
 }
@@ -772,11 +1008,15 @@ static int free_cell_entry(void *const context, struct hashmap_element_s *const 
 }
 
 void free_cell_manager(CellManager *manager) {
-    hashmap_iterate_pairs(&manager->map, free_cell_entry, NULL);
-    hashmap_destroy(&manager->map);
+    // Se sueltan todas las hojas, no solo la que se estaba viendo.
+    for (size_t i = 0; i < manager->sheetCount; i++) {
+        sheet_destroy(&manager->sheets[i].state);
+    }
 
-    history_clear(&manager->undo);
-    history_clear(&manager->redo);
+    free(manager->sheets);
+    manager->sheets = NULL;
+    manager->sheetCount = 0;
+    manager->sheetCapacity = 0;
 
     clipboard_free(&manager->clipboard);
 
@@ -798,7 +1038,7 @@ MetaCell *get_cell(CellManager *manager, unsigned int x, unsigned int y) {
     char key[32];
     sprintf(key, "%u,%u", x, y);
 
-    return (MetaCell *) hashmap_get(&manager->map, key, (hashmap_uint32_t) strlen(key));
+    return (MetaCell *) hashmap_get(&SHEET->map, key, (hashmap_uint32_t) strlen(key));
 }
 
 MetaCell *get_or_create_cell(CellManager *manager, unsigned int x, unsigned int y) {
@@ -818,7 +1058,7 @@ MetaCell *get_or_create_cell(CellManager *manager, unsigned int x, unsigned int 
     meta->y = y;
 
     char *key = cell_key(x, y);
-    hashmap_put(&manager->map, key, (hashmap_uint32_t) strlen(key), meta);
+    hashmap_put(&SHEET->map, key, (hashmap_uint32_t) strlen(key), meta);
 
     return meta;
 }
@@ -842,7 +1082,7 @@ static int clear_value(void *const context, struct hashmap_element_s *const elem
 }
 
 void clear_cell_values(CellManager *manager) {
-    hashmap_iterate_pairs(&manager->map, clear_value, NULL);
+    hashmap_iterate_pairs(&SHEET->map, clear_value, NULL);
 }
 
 void set_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *content) {
@@ -859,7 +1099,7 @@ void set_cell_content(CellManager *manager, unsigned int x, unsigned int y, cons
         meta->y = y;
 
         char *key = cell_key(x, y);
-        hashmap_put(&manager->map, key, (hashmap_uint32_t) strlen(key), meta);
+        hashmap_put(&SHEET->map, key, (hashmap_uint32_t) strlen(key), meta);
     }
 
     set_cell_text(meta, content);
@@ -905,39 +1145,39 @@ void set_error_message(CellManager *manager, const char *message) {
 static void update_view(CellManager *manager, int viewWidth, int viewHeight) {
     // Las columnas de los bordes de la celda del cursor, en coordenadas de la
     // rejilla (0 es la primera columna util despues del margen).
-    int left = (int) manager->cursor.x * STRIDE_X;
+    int left = (int) SHEET->cursor.x * STRIDE_X;
     int right = left + CELL_SIZE_X;
 
-    if (left - manager->originX < 0) {
-        manager->originX = left;
+    if (left - SHEET->originX < 0) {
+        SHEET->originX = left;
     }
 
-    if (right - manager->originX > viewWidth - 1) {
-        manager->originX = right - (viewWidth - 1);
+    if (right - SHEET->originX > viewWidth - 1) {
+        SHEET->originX = right - (viewWidth - 1);
 
         // Si la celda no cabe entera, se alinea a la izquierda.
-        if (left - manager->originX < 0) {
-            manager->originX = left;
+        if (left - SHEET->originX < 0) {
+            SHEET->originX = left;
         }
     }
 
-    int top = (int) manager->cursor.y * STRIDE_Y;
+    int top = (int) SHEET->cursor.y * STRIDE_Y;
     int bottom = top + CELL_SIZE_Y;
 
-    if (top - manager->originY < 0) {
-        manager->originY = top;
+    if (top - SHEET->originY < 0) {
+        SHEET->originY = top;
     }
 
-    if (bottom - manager->originY > viewHeight - 1) {
-        manager->originY = bottom - (viewHeight - 1);
+    if (bottom - SHEET->originY > viewHeight - 1) {
+        SHEET->originY = bottom - (viewHeight - 1);
 
-        if (top - manager->originY < 0) {
-            manager->originY = top;
+        if (top - SHEET->originY < 0) {
+            SHEET->originY = top;
         }
     }
 
-    if (manager->originX < 0) manager->originX = 0;
-    if (manager->originY < 0) manager->originY = 0;
+    if (SHEET->originX < 0) SHEET->originX = 0;
+    if (SHEET->originY < 0) SHEET->originY = 0;
 }
 
 // La primera celda que toca la ventana por la izquierda (o por arriba). Puede
@@ -1025,6 +1265,11 @@ static bool previous_status_ready = false;
 // Si la ultima vez se pudo escribir la ruta del archivo al final de la barra.
 static bool previous_path_shown = false;
 
+// La ultima linea de las pestañas, para no redibujarla si no cambio.
+static char previous_sheets[MESSAGE_SIZE * 4];
+static int previous_sheets_active = -1;
+static bool previous_sheets_ready = false;
+
 // Cambia el tamano de las celdas, con los limites puestos.
 void set_cell_size(int width, int height) {
     if (width < CELL_MIN_WIDTH) width = CELL_MIN_WIDTH;
@@ -1067,8 +1312,8 @@ static void draw_copied_cell(CellManager *manager, char *buffer, int width, int 
     unsigned int cellY = 0;
     clipboard_cell(&manager->clipboard, &cellX, &cellY);
 
-    int left = HEADER_WIDTH + (int) cellX * STRIDE_X - manager->originX;
-    int top = HEADER_HEIGHT + (int) cellY * STRIDE_Y - manager->originY;
+    int left = HEADER_WIDTH + (int) cellX * STRIDE_X - SHEET->originX;
+    int top = HEADER_HEIGHT + (int) cellY * STRIDE_Y - SHEET->originY;
     int right = left + CELL_SIZE_X;
     int bottom = top + CELL_SIZE_Y;
 
@@ -1092,7 +1337,7 @@ static void paint_grid(CellManager *manager) {
     int width = manager->size.x < 20 ? 20 : manager->size.x;
     int height = manager->size.y < 6 ? 6 : manager->size.y;
 
-    int status_y = height - STATUS_HEIGHT;
+    int status_y = GRID_BOTTOM(height);
 
     // Cuanto sitio tiene la rejilla en la pantalla. La ultima fila es para la
     // barra de estado, y el margen de la izquierda y la fila de arriba son para
@@ -1128,14 +1373,14 @@ static void paint_grid(CellManager *manager) {
 
     // Las celdas que tocan la ventana, incluidas las que quedan cortadas en
     // los bordes.
-    int firstColumn = first_cell(manager->originX, CELL_SIZE_X, STRIDE_X);
-    int lastColumn = last_cell(manager->originX, viewWidth, STRIDE_X);
-    int firstRow = first_cell(manager->originY, CELL_SIZE_Y, STRIDE_Y);
-    int lastRow = last_cell(manager->originY, viewHeight, STRIDE_Y);
+    int firstColumn = first_cell(SHEET->originX, CELL_SIZE_X, STRIDE_X);
+    int lastColumn = last_cell(SHEET->originX, viewWidth, STRIDE_X);
+    int firstRow = first_cell(SHEET->originY, CELL_SIZE_Y, STRIDE_Y);
+    int lastRow = last_cell(SHEET->originY, viewHeight, STRIDE_Y);
 
     // Las rayas verticales, una por borde de columna.
     for (int column = firstColumn; column <= lastColumn; column++) {
-        int x = HEADER_WIDTH + column * STRIDE_X - manager->originX;
+        int x = HEADER_WIDTH + column * STRIDE_X - SHEET->originX;
 
         if (x < HEADER_WIDTH) continue;
 
@@ -1146,7 +1391,7 @@ static void paint_grid(CellManager *manager) {
 
     // Las rayas horizontales, una por borde de fila.
     for (int row = firstRow; row <= lastRow; row++) {
-        int y = HEADER_HEIGHT + row * STRIDE_Y - manager->originY;
+        int y = HEADER_HEIGHT + row * STRIDE_Y - SHEET->originY;
 
         if (y < HEADER_HEIGHT || y >= status_y) continue;
 
@@ -1157,12 +1402,12 @@ static void paint_grid(CellManager *manager) {
 
     // Los cruces van al final, para que tapen las rayas.
     for (int column = firstColumn; column <= lastColumn; column++) {
-        int x = HEADER_WIDTH + column * STRIDE_X - manager->originX;
+        int x = HEADER_WIDTH + column * STRIDE_X - SHEET->originX;
 
         if (x < HEADER_WIDTH) continue;
 
         for (int row = firstRow; row <= lastRow; row++) {
-            int y = HEADER_HEIGHT + row * STRIDE_Y - manager->originY;
+            int y = HEADER_HEIGHT + row * STRIDE_Y - SHEET->originY;
 
             put_box(buffer, width, height, x, y, BOX_CR, STYLE_GRID);
         }
@@ -1174,8 +1419,8 @@ static void paint_grid(CellManager *manager) {
     // El bloque de la celda seleccionada, pintado antes que su contenido: asi
     // lo que se ve dentro es un espacio con el estilo de la seleccion cuando la
     // celda esta vacia, que es como se nota que esa es.
-    int highlight_x = HEADER_WIDTH + (int) manager->cursor.x * STRIDE_X + 1 - manager->originX;
-    int highlight_y = HEADER_HEIGHT + (int) manager->cursor.y * STRIDE_Y + 1 - manager->originY;
+    int highlight_x = HEADER_WIDTH + (int) SHEET->cursor.x * STRIDE_X + 1 - SHEET->originX;
+    int highlight_y = HEADER_HEIGHT + (int) SHEET->cursor.y * STRIDE_Y + 1 - SHEET->originY;
 
     for (int row = 0; row < CELL_SIZE_Y; row++) {
         for (int column = 0; column < CELL_SIZE_X; column++) {
@@ -1188,7 +1433,7 @@ static void paint_grid(CellManager *manager) {
         int length = (int) strlen(name);
 
         for (int i = 0; i < length; i++) {
-            int x = HEADER_WIDTH + column * STRIDE_X + 1 - manager->originX + i;
+            int x = HEADER_WIDTH + column * STRIDE_X + 1 - SHEET->originX + i;
 
             // Lo que se sale por la izquierda no se ve: el margen es de los
             // numeros de fila.
@@ -1204,7 +1449,7 @@ static void paint_grid(CellManager *manager) {
         sprintf(label, "%u", (unsigned int) (row + 1));
         int length = (int) strlen(label);
 
-        int y = HEADER_HEIGHT + row * STRIDE_Y + 1 - manager->originY;
+        int y = HEADER_HEIGHT + row * STRIDE_Y + 1 - SHEET->originY;
 
         // El numero se queda arriba en cuanto asoma la fila, para que se pueda
         // leer aunque la celda este cortada.
@@ -1232,8 +1477,8 @@ static void paint_grid(CellManager *manager) {
                 continue;
             }
 
-            bool is_cursor = manager->editing && x == manager->cursor.x && y == manager->cursor.y;
-            bool is_selected = x == manager->cursor.x && y == manager->cursor.y;
+            bool is_cursor = SHEET->editing && x == SHEET->cursor.x && y == SHEET->cursor.y;
+            bool is_selected = x == SHEET->cursor.x && y == SHEET->cursor.y;
 
             const char *content = cell_content(meta);
             // La celda del cursor enseña su fuente y no su valor: asi se ve la
@@ -1260,12 +1505,12 @@ static void paint_grid(CellManager *manager) {
 
             // Donde empieza el contenido de la celda en la pantalla. Puede
             // estar cortado por el borde de la ventana.
-            int base_x = HEADER_WIDTH + column * STRIDE_X + 1 - manager->originX;
-            int base_y = HEADER_HEIGHT + row * STRIDE_Y + 1 - manager->originY;
+            int base_x = HEADER_WIDTH + column * STRIDE_X + 1 - SHEET->originX;
+            int base_y = HEADER_HEIGHT + row * STRIDE_Y + 1 - SHEET->originY;
 
             // Si el texto no cabe, se ve la parte donde esta el cursor.
             size_t total = char_count(content);
-            size_t cursor_char = is_cursor ? char_index(content, manager->editOffset) : 0;
+            size_t cursor_char = is_cursor ? char_index(content, SHEET->editOffset) : 0;
 
             size_t start = 0;
             if (total > CELL_CAPACITY) {
@@ -1337,9 +1582,10 @@ static void paint_grid(CellManager *manager) {
         free_previous();
         clear_screen();
 
-        // La pantalla se limpio entera, asi que la barra de estado tambien
-        // se tiene que redibujar.
+        // La pantalla se limpio entera, asi que las barras tambien se tienen
+        // que redibujar.
         previous_status_ready = false;
+        previous_sheets_ready = false;
     }
 
     for (int y = 0; y < status_y; y++) {
@@ -1395,6 +1641,7 @@ static void paint_grid(CellManager *manager) {
 void invalidate_screen(void) {
     free_previous();
     previous_status_ready = false;
+    previous_sheets_ready = false;
 }
 
 // Cuantos fotogramas se pintan en medio de un desplazamiento, y cuanto se
@@ -1458,21 +1705,21 @@ static void pan_view(CellManager *manager, int *dx, int *dy) {
     int height = manager->size.y < 6 ? 6 : manager->size.y;
 
     int viewWidth = width - HEADER_WIDTH;
-    int viewHeight = (height - STATUS_HEIGHT) - HEADER_HEIGHT;
+    int viewHeight = GRID_BOTTOM(height) - HEADER_HEIGHT;
 
     if (viewWidth < STRIDE_X) viewWidth = STRIDE_X;
     if (viewHeight < STRIDE_Y) viewHeight = STRIDE_Y;
 
-    int oldX = manager->originX;
-    int oldY = manager->originY;
+    int oldX = SHEET->originX;
+    int oldY = SHEET->originY;
 
     update_view(manager, viewWidth, viewHeight);
 
-    *dx = manager->originX - oldX;
-    *dy = manager->originY - oldY;
+    *dx = SHEET->originX - oldX;
+    *dy = SHEET->originY - oldY;
 
-    manager->originX = oldX;
-    manager->originY = oldY;
+    SHEET->originX = oldX;
+    SHEET->originY = oldY;
 }
 
 void print_cell_manager(CellManager *manager) {
@@ -1487,22 +1734,179 @@ void print_cell_manager(CellManager *manager) {
     int frames = pan_frames(dx, dy);
 
     if (frames > 0) {
-        int oldX = manager->originX;
-        int oldY = manager->originY;
+        int oldX = SHEET->originX;
+        int oldY = SHEET->originY;
 
         for (int frame = 1; frame <= frames; frame++) {
-            manager->originX = oldX + (int) ((long long) dx * frame / (frames + 1));
-            manager->originY = oldY + (int) ((long long) dy * frame / (frames + 1));
+            SHEET->originX = oldX + (int) ((long long) dx * frame / (frames + 1));
+            SHEET->originY = oldY + (int) ((long long) dy * frame / (frames + 1));
 
             paint_grid(manager);
             pan_wait(PAN_FRAME_MICROSECONDS);
         }
     }
 
-    manager->originX += dx;
-    manager->originY += dy;
+    SHEET->originX += dx;
+    SHEET->originY += dy;
 
     paint_grid(manager);
+}
+
+// Cuantas pestañas se ven, y cuales. `sizes` son las columnas que pesa el nombre
+// de cada hoja, y `width` lo que mide la pantalla. La hoja que se esta viendo
+// entra siempre, y a su alrededor se ponen las demas hasta llenar la fila: asi,
+// con muchas hojas, la que interesa nunca se cae por el borde.
+void sheet_bar_range(const int *sizes, int count, int active, int width, int *first, int *last) {
+    // Se deja sitio para la raya entre pestañas y para el aviso de las que se
+    // quedan fuera.
+    int budget = width - 2;
+
+    if (count <= 0) {
+        *first = 0;
+        *last = 0;
+
+        return;
+    }
+
+    if (active < 0) active = 0;
+    if (active >= count) active = count - 1;
+
+    int from = active;
+    int to = active + 1;
+    int room = sizes[active];
+
+    for (;;) {
+        bool grew = false;
+
+        if (from > 0 && room + sizes[from - 1] + 1 <= budget) {
+            from--;
+            room += sizes[from] + 1;
+            grew = true;
+        }
+
+        if (to < count && room + sizes[to] + 1 <= budget) {
+            room += sizes[to] + 1;
+            to++;
+            grew = true;
+        }
+
+        if (!grew) {
+            break;
+        }
+    }
+
+    *first = from;
+    *last = to;
+}
+
+// Las pestañas de las hojas, en su fila, encima de la barra de estado. La que
+// se esta viendo va marcada, como la celda seleccionada.
+void print_sheets(CellManager *manager) {
+    int width = manager->size.x < 20 ? 20 : manager->size.x;
+    int height = manager->size.y < 6 ? 6 : manager->size.y;
+    int y = height - STATUS_HEIGHT - SHEET_BAR_HEIGHT;
+
+    // Las hojas unidas, para poder comparar con la linea de antes.
+    char joined[MESSAGE_SIZE * 4];
+    joined[0] = '\0';
+
+    for (int i = 0; i < sheet_count(manager); i++) {
+        size_t length = strlen(joined);
+
+        if (length + SHEET_NAME_SIZE + 4 >= sizeof(joined)) {
+            break;
+        }
+
+        snprintf(joined + length, sizeof(joined) - length, "%s%s", i == 0 ? "" : "|", sheet_name_at(manager, i));
+    }
+
+    if (manager->renaming) {
+        size_t length = strlen(joined);
+
+        // Lo que se esta escribiendo tambien cuenta como cambio de linea, para
+        // que se vea mientras se teclea.
+        snprintf(joined + length, sizeof(joined) - length, "|*%s", manager->renameText);
+    }
+
+    if (previous_sheets_ready &&
+        strcmp(joined, previous_sheets) == 0 &&
+        manager->active == previous_sheets_active) {
+        return;
+    }
+
+    move_cursor(0, (uint16_t) y);
+
+    int sheets = sheet_count(manager);
+    int *sizes = (int *) malloc((size_t) (sheets > 0 ? sheets : 1) * sizeof(int));
+
+    if (sizes == NULL) {
+        return;
+    }
+
+    for (int i = 0; i < sheets; i++) {
+        sizes[i] = utf8_columns(sheet_name_at(manager, i));
+    }
+
+    int first = 0;
+    int last = sheets;
+
+    sheet_bar_range(sizes, sheets, manager->active, width, &first, &last);
+
+    free(sizes);
+
+    int used = 0;
+
+    // Aviso de que quedan hojas por la izquierda.
+    if (first > 0) {
+        fputs(style_sequence(STYLE_GRID), stdout);
+        fputc('<', stdout);
+        used++;
+    }
+
+    for (int i = first; i < last; i++) {
+        const char *name = sheet_name_at(manager, i);
+        char typing[SHEET_NAME_SIZE];
+
+        // Con el Ctrl+F, la pestana que se esta viendo muestra lo que se esta
+        // escribiendo, en vez del nombre que tenia.
+        if (manager->renaming && i == manager->active) {
+            snprintf(typing, sizeof(typing), "%s", manager->renameText);
+
+            if (typing[0] == '\0') {
+                strcpy(typing, " ");
+            }
+
+            name = typing;
+        }
+
+        if (i > first) {
+            fputs(style_sequence(STYLE_GRID), stdout);
+            fputc('|', stdout);
+            used++;
+        }
+
+        fputs(style_sequence(i == manager->active ? STYLE_CURSOR : STYLE_HEADER), stdout);
+
+        write_columns(name, width - 1 - used);
+        used += utf8_columns(name);
+
+        if (used > width - 1) {
+            used = width - 1;
+        }
+    }
+
+    // El resto de la fila se pone en blanco, para tapar lo que hubiera de antes.
+    fputs(style_sequence(STYLE_NONE), stdout);
+
+    for (; used < width; used++) {
+        fputc(' ', stdout);
+    }
+
+    snprintf(previous_sheets, sizeof(previous_sheets), "%s", joined);
+    previous_sheets_active = manager->active;
+    previous_sheets_ready = true;
+
+    flush();
 }
 
 static void append_text(char *status, size_t size, const char *text) {
@@ -1539,8 +1943,8 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     int height = manager->size.y < 6 ? 6 : manager->size.y;
     int y = height - STATUS_HEIGHT;
 
-    char *ref = ref_to_string(manager->cursor.x, manager->cursor.y);
-    MetaCell *meta = get_cell(manager, manager->cursor.x, manager->cursor.y);
+    char *ref = ref_to_string(SHEET->cursor.x, SHEET->cursor.y);
+    MetaCell *meta = get_cell(manager, SHEET->cursor.x, SHEET->cursor.y);
     const char *content = cell_content(meta);
     const char *value = cell_value(meta);
 
@@ -1596,7 +2000,7 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
         append_text(extra, sizeof(extra), manager->message);
     } else if (offering) {
         append_text(extra, sizeof(extra), offered);
-    } else if (manager->editing) {
+    } else if (SHEET->editing) {
         // Mientras se escribe, la barra deja ver el texto entero: en la rejilla
         // solo se ve el trozo que cabe en la celda.
         append_text(extra, sizeof(extra), content);
@@ -1643,7 +2047,7 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
 
     if (manager->message[0] != '\0') {
         extraStyle = manager->messageIsError ? STYLE_ERROR : STYLE_MESSAGE;
-    } else if (offering || manager->editing) {
+    } else if (offering || SHEET->editing) {
         extraStyle = STYLE_MESSAGE;
     }
 

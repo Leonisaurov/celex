@@ -50,7 +50,8 @@ int main(int argc, char **argv) {
         }
 
         print_cell_manager(&manager);
-        print_status(&manager, manager.editing ? "EDIT" : "NORMAL", path);
+        print_sheets(&manager);
+        print_status(&manager, sheet_state(&manager)->editing ? "EDIT" : "NORMAL", path);
 
         int key = getkey();
         if (key < 0) {

@@ -479,6 +479,64 @@ int main(int argc, char **argv) {
     remove(keysPath);
     remove(outPath);
 
+    // Y las hojas: una hoja nueva con su celda, guardada, y el archivo abierto
+    // otra vez. Las dos hojas tienen que seguir separadas, cada una con su
+    // nombre en la barra de las pestañas.
+    if (!write_file(sheetPath, "A1 = 1\n", 7)) {
+        printf("  FALLO: no se puede escribir el archivo de la hoja\n");
+        return 1;
+    }
+
+    char sheets[16];
+    size_t sheetsLength = 0;
+
+    sheets[sheetsLength++] = 0x01;              // Ctrl+A: una hoja nueva
+    sheets[sheetsLength++] = '7';
+    sheets[sheetsLength++] = '7';
+    sheets[sheetsLength++] = 0x1b;              // fuera de la celda
+    sheets[sheetsLength++] = 0x13;              // Ctrl+S
+    sheets[sheetsLength++] = 'q';
+
+    if (!write_file(keysPath, sheets, sheetsLength)) {
+        printf("  FALLO: no se puede escribir el archivo de las teclas\n");
+        return 1;
+    }
+
+    status = run_editor(editor, sheetPath, keysPath, outPath);
+    check(status == 0, "el editor sale sin errores");
+
+    sheet = read_file(sheetPath);
+
+    if (sheet != NULL) {
+        check_has(sheet, "SHEET = \"Sheet1\"", "la primera hoja sale con su nombre");
+        check_has(sheet, "SHEET = \"Sheet2\"", "la hoja nueva sale con su nombre");
+        check_has(sheet, "A1 = 77", "la celda de la hoja nueva se guarda");
+
+        // La celda de la primera hoja sigue siendo la de antes: las hojas no se
+        // pisan entre ellas.
+        check(strstr(sheet, "A1 = 1") != NULL, "la primera hoja conserva su celda");
+    }
+
+    free(sheet);
+
+    // Abriendo el archivo guardado otra vez, las dos pestañas se ven.
+    screen = read_file(outPath);
+    check(screen != NULL, "se puede leer lo que dibujo el editor");
+
+    if (screen != NULL) {
+        // La raya que separa las pestañas y la hoja que se esta viendo, tal y
+        // como las pinta el tema de empezar: la raya sin color y la hoja al
+        // reves. Entre medias van las secuencias, asi que se busca la linea
+        // completa de bytes.
+        check_has(screen, "\x1b[0m|\x1b[0;7mSheet2", "las pestañas de las hojas se dibujan");
+    }
+
+    free(screen);
+
+    remove(sheetPath);
+    remove(keysPath);
+    remove(outPath);
+
     if (failures == 0) {
         printf("  editor: todo correcto\n");
         return 0;

@@ -49,15 +49,15 @@ int main(void) {
     CellManager manager = new_cell_manager((TermSize) { .x = 80, .y = 24 });
 
     // Escribir en una celda que no tiene nada.
-    manager.cursor.x = 1;
-    manager.cursor.y = 1;
+    sheet_state(&manager)->cursor.x = 1;
+    sheet_state(&manager)->cursor.y = 1;
     edit_insert(&manager, "7", 1);
     check_content(&manager, 1, 1, "7", "escribir en una celda vacia");
-    check(manager.dirty, "la hoja queda sin guardar al escribir");
+    check(sheet_state(&manager)->dirty, "la hoja queda sin guardar al escribir");
 
     // Insertar en medio del contenido.
-    manager.cursor.x = 0;
-    manager.cursor.y = 0;
+    sheet_state(&manager)->cursor.x = 0;
+    sheet_state(&manager)->cursor.y = 0;
     set_cell_content(&manager, 0, 0, "abc");
     edit_reset(&manager);
     edit_move_cursor(&manager, -1);
@@ -83,13 +83,13 @@ int main(void) {
     check_content(&manager, 0, 0, "1ac2", "insertar al final");
 
     // Un caracter de dos bytes ocupa un solo caracter.
-    manager.cursor.x = 2;
-    manager.cursor.y = 2;
+    sheet_state(&manager)->cursor.x = 2;
+    sheet_state(&manager)->cursor.y = 2;
     set_cell_content(&manager, 2, 2, "a\u00f1");
     edit_reset(&manager);
-    check(manager.editOffset == 3, "el cursor va al final de un texto con acentos");
+    check(sheet_state(&manager)->editOffset == 3, "el cursor va al final de un texto con acentos");
     edit_move_cursor(&manager, -1);
-    check(manager.editOffset == 1, "el cursor salta el caracter de dos bytes entero");
+    check(sheet_state(&manager)->editOffset == 1, "el cursor salta el caracter de dos bytes entero");
 
     // Deshacer y rehacer.
     undo_edit(&manager);
@@ -131,9 +131,9 @@ int main(void) {
     set_cell_value(&manager, 6, 6, "3");
     copy_cell_content(&manager, 6, 6);
 
-    manager.cursor.x = 7;
-    manager.cursor.y = 7;
-    manager.editOffset = 0;
+    sheet_state(&manager)->cursor.x = 7;
+    sheet_state(&manager)->cursor.y = 7;
+    sheet_state(&manager)->editOffset = 0;
     paste_cell_text(&manager, 7, 7, clipboard_text(&manager.clipboard));
     check_content(&manager, 7, 7, "A1 + 2", "pegar dentro de una celda pega la formula");
 
@@ -141,9 +141,9 @@ int main(void) {
     set_cell_content(&manager, 8, 8, "sin valor");
     copy_cell_content(&manager, 8, 8);
 
-    manager.cursor.x = 9;
-    manager.cursor.y = 9;
-    manager.editOffset = 0;
+    sheet_state(&manager)->cursor.x = 9;
+    sheet_state(&manager)->cursor.y = 9;
+    sheet_state(&manager)->editOffset = 0;
     paste_cell_text(&manager, 9, 9, clipboard_text(&manager.clipboard));
     check_content(&manager, 9, 9, "sin valor", "pegar una celda sin valor pega su contenido");
 
@@ -199,6 +199,112 @@ int main(void) {
     set_cell_size(4, 2);
     check(cellWidth == 4 && cellHeight == 2, "el tamano de celda se puede poner el de siempre");
     check(pan_frames(CELL_SIZE_X + 1, 0) == 2, "con el tamano de siempre, el deslizamiento es de dos fotogramas");
+
+    // Las hojas del archivo: cada una con sus celdas, su cursor, su vista y su
+    // historial de deshacer, que no se mezclan con las de las demas.
+    CellManager book = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+
+    check(sheet_count(&book) == 1, "el archivo empieza con una hoja");
+    check(strcmp(sheet_name_at(&book, 0), "Sheet1") == 0, "la primera hoja se llama Sheet1");
+    check(sheet_state(&book)->originX == 0 && sheet_state(&book)->originY == 0, "la primera hoja empieza sin deslizar");
+
+    set_cell_content(&book, 0, 0, "1");
+
+    int second = sheet_add(&book, "datos");
+    check(second == 1, "anadir una hoja la pone detras de la que se esta viendo");
+    check(sheet_count(&book) == 2, "ya hay dos hojas");
+    check(sheet_active(&book) == 1, "la hoja nueva es la que se esta viendo");
+    check(strcmp(sheet_name_at(&book, 1), "datos") == 0, "la hoja nueva tiene el nombre pedido");
+    check(get_cell(&book, 0, 0) == NULL, "la hoja nueva esta vacia");
+
+    set_cell_content(&book, 0, 0, "77");
+
+    sheet_select(&book, 0);
+    check_content(&book, 0, 0, "1", "volver a la primera hoja deja sus celdas");
+
+    sheet_select(&book, 1);
+    check_content(&book, 0, 0, "77", "la segunda hoja tiene las suyas");
+
+    // El cursor y la vista son de cada hoja.
+    sheet_state(&book)->cursor.x = 4;
+    sheet_state(&book)->originX = 30;
+    sheet_select(&book, 0);
+    check(sheet_state(&book)->cursor.x == 0, "el cursor es de cada hoja");
+    check(sheet_state(&book)->originX == 0, "lo deslizado es de cada hoja");
+
+    // Y deshacer tambien: lo que se edito en una hoja no se deshace en otra.
+    sheet_select(&book, 1);
+    edit_cell_content(&book, 5, 5, "nueva");
+    check(can_undo(&book), "la hoja editada tiene algo que deshacer");
+    check(sheet_any_dirty(&book), "la hoja editada esta sin guardar");
+
+    sheet_select(&book, 0);
+    check(!can_undo(&book), "la otra hoja no tiene nada que deshacer");
+
+    // Guardar deja limpias todas las hojas, no solo la que se veia.
+    sheet_mark_saved(&book);
+    check(!sheet_any_dirty(&book), "despues de guardar no queda ninguna hoja sin guardar");
+
+    sheet_rename(&book, 1, "cambios");
+    check(strcmp(sheet_name_at(&book, 1), "cambios") == 0, "el nombre de una hoja se puede cambiar");
+
+    // Dos hojas no pueden llamarse igual: en las pestanas no se distinguirian.
+    // Aqui la primera se queda con el nombre de la otra, y no se cambia.
+    sheet_rename(&book, 0, "datos");
+    check(sheet_count(&book) == 2, "siguen habiendo dos hojas");
+
+    sheet_rename(&book, 1, "datos");
+    check(strcmp(sheet_name_at(&book, 1), "cambios") == 0, "no se pone a una hoja el nombre que ya tiene otra");
+
+    int added = sheet_add(&book, NULL);
+    check(added >= 0, "se anadio una hoja para la prueba de nombres");
+    check(strcmp(sheet_name_at(&book, added), "Sheet3") == 0, "la hoja anadida coge un nombre que no este usado");
+
+    sheet_rename(&book, 0, "Sheet3");
+    check(strcmp(sheet_name_at(&book, 0), "datos") == 0, "y la que se renombra tampoco repite nombre");
+
+    // Se quita la hoja de prueba, para seguir con las dos de antes.
+    sheet_remove(&book, added);
+    check(sheet_count(&book) == 2, "la hoja de prueba se quito");
+
+    // Quitar hojas: la que se esta viendo cambia de numero, y la ultima no se va.
+    sheet_remove(&book, 1);
+    check(sheet_count(&book) == 1, "quitar una hoja deja una menos");
+    check(sheet_active(&book) == 0, "se sigue viendo la que queda");
+    check_content(&book, 0, 0, "1", "la que queda es la primera");
+
+    sheet_remove(&book, 0);
+    check(sheet_count(&book) == 1, "la ultima hoja no se quita");
+
+    // Las pestañas de la barra: caben todas, o se recorta por los lados, pero la
+    // hoja que se esta viendo entra siempre.
+    int six[20];
+
+    for (int i = 0; i < 20; i++) {
+        six[i] = 6;
+    }
+
+    int first = -1;
+    int last = -1;
+
+    sheet_bar_range(six, 3, 0, 80, &first, &last);
+    check(first == 0 && last == 3, "con sitio de sobra se ven todas las pestañas");
+
+    sheet_bar_range(six, 20, 19, 20, &first, &last);
+    check(first <= 19 && last > 19, "la ultima hoja se ve aunque no quepan todas");
+    check(last - first < 20, "y se dejan fuera las que no caben");
+
+    sheet_bar_range(six, 20, 10, 20, &first, &last);
+    check(first <= 10 && last > 10, "la hoja del medio tambien queda visible");
+
+    int wide[1] = { 40 };
+    sheet_bar_range(wide, 1, 0, 10, &first, &last);
+    check(first == 0 && last == 1, "una hoja con nombre largo se pinta igualmente");
+
+    sheet_bar_range(six, 0, 0, 80, &first, &last);
+    check(first == 0 && last == 0, "sin hojas no hay pestañas");
+
+    free_cell_manager(&book);
 
     if (failures == 0) {
         printf("  edicion: todo correcto\n");
