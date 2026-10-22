@@ -68,6 +68,10 @@ void edit_cell_content(CellManager *manager, unsigned int x, unsigned int y, con
 // contenido del portapapeles en una celda.
 void copy_cell_content(CellManager *manager, unsigned int x, unsigned int y);
 void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y);
+
+// Pega dentro de la celda que se esta editando: el texto entra donde esta el
+// cursor de texto, en vez de reemplazar el contenido entero.
+void paste_cell_text(CellManager *manager, unsigned int x, unsigned int y);
 bool has_clipboard(void);
 
 // El cursor de texto, dentro del contenido de la celda que se edita.

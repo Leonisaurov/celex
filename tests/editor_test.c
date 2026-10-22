@@ -33,6 +33,18 @@ static void check_content(CellManager *manager, unsigned int x, unsigned int y, 
     failures++;
 }
 
+static void check_value(CellManager *manager, unsigned int x, unsigned int y, const char *wanted, const char *what) {
+    MetaCell *meta = get_cell(manager, x, y);
+    const char *value = cell_value(meta);
+
+    if (strcmp(value, wanted) == 0) {
+        return;
+    }
+
+    printf("  FALLO: %s (esperado \"%s\", obtenido \"%s\")\n", what, wanted, value);
+    failures++;
+}
+
 int main(void) {
     CellManager manager = new_cell_manager((TermSize) { .x = 80, .y = 24 });
 
@@ -99,6 +111,21 @@ int main(void) {
     // Pegar y deshacer deja la celda como estaba.
     undo_edit(&manager);
     check_content(&manager, 3, 3, "", "deshacer un pegado");
+
+    // El valor de una celda se invalida cuando cambia su contenido: si no, se
+    // seguiria enseñando un valor que ya no corresponde.
+    set_cell_value(&manager, 5, 5, "42");
+    check_value(&manager, 5, 5, "42", "la celda tiene valor");
+
+    copy_cell_content(&manager, 1, 1);
+    paste_cell_content(&manager, 5, 5);
+    check_content(&manager, 5, 5, "7", "pegar encima de una celda con valor");
+    check_value(&manager, 5, 5, "", "el valor viejo se invalida al pegar");
+
+    // Y al deshacer tambien.
+    set_cell_value(&manager, 5, 5, "42");
+    undo_edit(&manager);
+    check_value(&manager, 5, 5, "", "el valor se invalida al deshacer");
 
     free_cell_manager(&manager);
 

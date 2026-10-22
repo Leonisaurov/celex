@@ -21,6 +21,18 @@
 #include "ref.h"
 #include "sheet.h"
 
+// La salida del programa no debe romper la pantalla del editor. El archivo se
+// abre una sola vez y se deja abierto, porque el lenguaje escribe en el.
+static FILE *output_sink = NULL;
+
+static FILE *program_output(void) {
+    if (output_sink == NULL) {
+        output_sink = fopen(NULL_DEVICE, "w");
+    }
+
+    return output_sink;
+}
+
 int run_script(CellManager *manager, char *message, size_t size) {
     char *source = sheet_source(manager);
     if (source == NULL) {
@@ -29,7 +41,7 @@ int run_script(CellManager *manager, char *message, size_t size) {
     }
 
     // La salida del programa no debe romper la pantalla del editor.
-    FILE *sink = fopen(NULL_DEVICE, "w");
+    FILE *sink = program_output();
     if (sink != NULL) {
         sheet_set_output(sink);
     }
@@ -62,10 +74,12 @@ int run_script(CellManager *manager, char *message, size_t size) {
 
     sheet_result_free(&result);
 
+    // Si no hay nada que avisar, el mensaje se deja vacio: el que llama
+    // decide que pone en su barra.
     if (error[0] != '\0') {
         snprintf(message, size, "%s", error);
-    } else {
-        snprintf(message, size, "script executed");
+    } else if (message != NULL && size > 0) {
+        message[0] = '\0';
     }
 
     return SCRIPT_OK;

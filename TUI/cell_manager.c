@@ -299,6 +299,17 @@ void edit_delete(CellManager *manager) {
     free(old);
 }
 
+// El valor de una celda se invalida cuando su contenido cambia: si no, se
+// seguiria enseñando un valor viejo que ya no corresponde con lo que dice la
+// celda.
+static void invalidate_value(CellManager *manager, unsigned int x, unsigned int y) {
+    MetaCell *meta = get_cell(manager, x, y);
+
+    if (meta != NULL) {
+        write_cell_value(meta, "");
+    }
+}
+
 // Guarda el cambio de una celda. Los cambios seguidos de la misma celda se
 // juntan, para que escribir una palabra sea un solo paso de deshacer.
 static void record_change(CellManager *manager, unsigned int x, unsigned int y, const char *oldContent) {
@@ -306,6 +317,9 @@ static void record_change(CellManager *manager, unsigned int x, unsigned int y, 
     history_clear(&manager->redo);
 
     manager->dirty = true;
+
+    // El valor viejo ya no vale.
+    invalidate_value(manager, x, y);
 
     if (manager->undo.count > 0) {
         HistoryEntry *last = &manager->undo.items[manager->undo.count - 1];
@@ -354,6 +368,9 @@ void undo_edit(CellManager *manager) {
     // Se vuelve al contenido anterior.
     set_cell_content(manager, entry->x, entry->y, entry->oldContent);
 
+    // El valor que habia ya no corresponde al contenido.
+    invalidate_value(manager, entry->x, entry->y);
+
     // El cursor de texto se queda al final del contenido nuevo.
     manager->editOffset = strlen(entry->oldContent);
 
@@ -374,6 +391,9 @@ void redo_edit(CellManager *manager) {
 
     // Se vuelve al contenido nuevo.
     set_cell_content(manager, entry->x, entry->y, entry->newContent);
+
+    // El valor que habia ya no corresponde al contenido.
+    invalidate_value(manager, entry->x, entry->y);
 
     // El cursor de texto se queda al final del contenido nuevo.
     manager->editOffset = strlen(entry->newContent);
@@ -421,6 +441,27 @@ void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y) {
     }
 
     edit_cell_content(manager, x, y, clipboard);
+}
+
+void paste_cell_text(CellManager *manager, unsigned int x, unsigned int y) {
+    if (clipboard == NULL) {
+        return;
+    }
+
+    MetaCell *meta = get_or_create_cell(manager, x, y);
+    if (meta == NULL) {
+        return;
+    }
+
+    char *old = duplicate_text(cell_content(meta));
+
+    // El texto entra donde esta el cursor de la celda.
+    insert_cell_text(meta, manager->editOffset, clipboard, strlen(clipboard));
+    manager->editOffset += strlen(clipboard);
+
+    record_change(manager, x, y, old);
+
+    free(old);
 }
 
 void edit_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *content) {
@@ -834,7 +875,9 @@ void print_cell_manager(CellManager *manager) {
             }
 
             const char *content = cell_content(meta);
-            if (manager->showValues) {
+            // Mientras se esta editando se ve el fuente, que es lo que se
+            // esta escribiendo. El valor va por detras.
+            if (manager->showValues && !manager->editing) {
                 content = cell_value(meta);
             }
 

@@ -142,6 +142,15 @@ and the cell under the cursor is the one that shows where the text goes.
 If the content does not fit in the cell, the part that is shown is the one
 where the cursor is.
 
+The sheet is evaluated again every time a change is committed, so the values
+always match the content of the cells. While a cell is being edited, that
+cell shows its source, since that is what is being written; the rest of the
+cells keep showing their values.
+
+`Ctrl+C` copies the content of the cell under the cursor, and `Ctrl+V` pastes
+it into the cell under the cursor, replacing its content. While a cell is
+being edited, the pasted text goes in where the text cursor is.
+
 The clipboard is the one of the editor, so it works the same on every
 system. If the sheet has changes that were not saved, `q` asks for a
 confirmation before leaving.

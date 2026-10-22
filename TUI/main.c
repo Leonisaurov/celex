@@ -17,6 +17,24 @@
 #define KEY_CTRL_V 22
 #define KEY_CTRL_L 12
 
+// Vuelve a calcular la hoja, para que los valores correspondan con el
+// contenido de las celdas. Solo avisa si alguna celda no se pudo calcular:
+// devuelve si dejo un mensaje en la barra.
+static bool recalculate(CellManager *manager) {
+    char message[MESSAGE_SIZE];
+
+    message[0] = '\0';
+
+    if (run_script(manager, message, MESSAGE_SIZE) == SCRIPT_OK && message[0] == '\0') {
+        // Todo se pudo calcular: no hay nada que avisar.
+        return false;
+    }
+
+    set_message(manager, message);
+
+    return true;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Usage:\n\t%s <sourceFiles.cle>\n", argv[0]);
@@ -92,6 +110,7 @@ int main(int argc, char **argv) {
             }
 
             keepMessage = true;
+            recalculate(&manager);
         } else if (key == KEY_CTRL_L) {
             // Recargar el archivo, por si se cambio por fuera.
             if (path == NULL) {
@@ -116,8 +135,19 @@ int main(int argc, char **argv) {
             keepMessage = true;
         } else if (key == KEY_CTRL_V) {
             if (has_clipboard()) {
-                paste_cell_content(&manager, manager.cursor.x, manager.cursor.y);
+                if (manager.editing) {
+                    // Pegar dentro de la celda: el texto entra donde esta el
+                    // cursor de texto.
+                    paste_cell_text(&manager, manager.cursor.x, manager.cursor.y);
+                } else {
+                    paste_cell_content(&manager, manager.cursor.x, manager.cursor.y);
+                }
+
                 set_message(&manager, "pasted");
+                keepMessage = true;
+
+                // La celda pegada tiene que enseñar su valor, no el viejo.
+                recalculate(&manager);
             } else {
                 set_message(&manager, "the clipboard is empty");
             }
@@ -127,10 +157,12 @@ int main(int argc, char **argv) {
             switch (key) {
                 case KEY_ESC:
                     manager.editing = false;
+                    keepMessage = recalculate(&manager);
                     break;
                 case KEY_ENTER:
                     manager.editing = false;
                     if (manager.cursor.y < UINT16_MAX) manager.cursor.y++;
+                    keepMessage = recalculate(&manager);
                     break;
                 case KEY_BACKSPACE:
                     edit_backspace(&manager);
@@ -147,10 +179,12 @@ int main(int argc, char **argv) {
                 case KEY_UP:
                     manager.editing = false;
                     if (manager.cursor.y > 0) manager.cursor.y--;
+                    keepMessage = recalculate(&manager);
                     break;
                 case KEY_DOWN:
                     manager.editing = false;
                     if (manager.cursor.y < UINT16_MAX) manager.cursor.y++;
+                    keepMessage = recalculate(&manager);
                     break;
                 case KEY_LEFT:
                     // Las flechas mueven el cursor de texto, no la celda.
@@ -176,21 +210,6 @@ int main(int argc, char **argv) {
                         keepMessage = true;
                     } else {
                         running = false;
-                    }
-                    break;
-                case KEY_CTRL_C:
-                    copy_cell_content(&manager, manager.cursor.x, manager.cursor.y);
-                    set_message(&manager, "copied");
-                    keepMessage = true;
-                    break;
-                case KEY_CTRL_V:
-                    if (has_clipboard()) {
-                        paste_cell_content(&manager, manager.cursor.x, manager.cursor.y);
-                        set_message(&manager, "pasted");
-                        keepMessage = true;
-                    } else {
-                        set_message(&manager, "the clipboard is empty");
-                        keepMessage = true;
                     }
                     break;
                 case 'h':
@@ -223,6 +242,7 @@ int main(int argc, char **argv) {
                 case 'x':
                 case KEY_DELETE:
                     clear_cell(&manager, manager.cursor.x, manager.cursor.y);
+                    keepMessage = recalculate(&manager);
                     break;
                 case 'v':
                     manager.showValues = !manager.showValues;
@@ -232,6 +252,10 @@ int main(int argc, char **argv) {
                     int status = run_script(&manager, message, MESSAGE_SIZE);
                     if (status == SCRIPT_OK) {
                         manager.showValues = true;
+
+                        if (message[0] == '\0') {
+                            snprintf(message, MESSAGE_SIZE, "script executed");
+                        }
                     }
                     set_message(&manager, message);
                     keepMessage = true;
