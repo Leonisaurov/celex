@@ -27,6 +27,10 @@ const char *style_sequence(ScreenStyle style);
 // Pone el tema que sigue en la lista. Devuelve el nombre del que ha quedado.
 const char *theme_next(void);
 
+// Pone el tema que se llama asi, como lo escribe el archivo del editor.
+// Devuelve si lo encontro.
+int theme_set_by_name(const char *name);
+
 // Cuantos temas hay, para poder dar la vuelta a la lista.
 int theme_count(void);
 

@@ -135,7 +135,10 @@ static const char *pieces[] = {
     "l",
     // El Ctrl+V.
     "\x1b[17;29;0;1;8;1_\x1b[86;47;22;1;8;1_\x1b[86;47;22;0;8;1_\x1b[17;29;0;0;0;1_",
-    // El Ctrl+S, para guardar la hoja.
+    // El Ctrl+E, para exportar el guion del lenguaje. VK_E es 69 y su codigo de
+    // tecla 18; con Ctrl pulsado el editor saca de ahi el 5.
+    "\x1b[17;29;0;1;8;1_\x1b[69;18;69;1;8;1_\x1b[69;18;0;0;8;1_\x1b[17;29;0;0;0;1_",
+    // El Ctrl+S, para guardar el documento del editor.
     "\x1b[17;29;0;1;8;1_\x1b[83;31;19;1;8;1_\x1b[83;31;19;0;8;1_\x1b[17;29;0;0;0;1_",
     // Salir.
     "q",
@@ -150,7 +153,9 @@ static const char *pieces[] = {
     "l",
     // El Ctrl+V.
     "\x16",
-    // El Ctrl+S, para guardar la hoja.
+    // El Ctrl+E, para exportar el guion del lenguaje.
+    "\x05",
+    // El Ctrl+S, para guardar el documento del editor.
     "\x13",
     // Salir.
     "q",
@@ -585,7 +590,7 @@ int main(int argc, char **argv) {
     char *sheet = read_file(sheetPath);
 
     if (sheet == NULL) {
-        check(false, "se puede leer la hoja guardada");
+        check(false, "se puede leer el guion exportado");
     } else {
         if (strstr(sheet, "A1 = 6*7") == NULL) {
             printf("  FALLO: la celda del pegado no se guardo\n");
@@ -599,6 +604,26 @@ int main(int argc, char **argv) {
     }
 
     free(sheet);
+
+    // El Ctrl+S escribe el documento del editor al lado, con su estructura.
+    char documentPath[512];
+    const char *dot = strrchr(sheetPath, '.');
+
+    snprintf(documentPath, sizeof(documentPath), "%.*s%s", (int) (dot - sheetPath), sheetPath, ".clex");
+
+    char *document = read_file(documentPath);
+
+    if (document == NULL) {
+        check(false, "el editor guarda su documento en una consola de verdad");
+    } else {
+        if (strstr(document, "celex-document 1") == NULL || strstr(document, "cell A1 \"6*7\"") == NULL) {
+            printf("  FALLO: el documento no trae la cabecera y las celdas\n");
+            failures++;
+        }
+    }
+
+    free(document);
+    remove(documentPath);
 
     if (output != NULL && strstr(output, "6*7") == NULL) {
         printf("  FALLO: la formula pegada no sale en la pantalla\n");

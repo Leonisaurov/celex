@@ -1,10 +1,12 @@
-// Pruebas de la edicion de las celdas. No necesitan terminal: solo se
-// llama a las funciones del gestor de celdas, sin dibujar nada.
+// Pruebas de la edicion de las celdas y del documento del editor. No necesitan
+// terminal: solo se llama a las funciones del gestor de celdas, sin dibujar nada.
 //
 //   tests/editor_test
 
 #include "cell_manager.h"
+#include "document.h"
 #include "sheet.h"
+#include "theme.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -303,6 +305,96 @@ int main(void) {
 
     sheet_bar_range(six, 0, 0, 80, &first, &last);
     check(first == 0 && last == 0, "sin hojas no hay pestañas");
+
+    // El documento del editor, que es lo que guarda el .clex: lo que se escribe
+    // tiene que volver igual, con las hojas, el tamano de las celdas, el tema y
+    // lo que habia en cada celda.
+    CellManager doc = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+
+    set_cell_content(&doc, 0, 0, "\"hola\"");
+    set_cell_content(&doc, 1, 3, "A1 + 2");
+    sheet_state(&doc)->cursor.x = 4;
+    sheet_state(&doc)->cursor.y = 2;
+    sheet_state(&doc)->originX = 15;
+
+    check(sheet_add(&doc, "gastos") > 0, "el documento tiene otra hoja");
+    set_cell_content(&doc, 0, 0, "30");
+
+    set_cell_size(6, 3);
+    check(theme_set_by_name("oscuro") != 0, "el tema se puede poner por su nombre");
+
+    char *text = document_source(&doc);
+    check(text != NULL, "el documento se puede escribir");
+
+    if (text != NULL) {
+        check(strstr(text, "celex-document 1") != NULL, "empieza con la cabecera y la version");
+        check(strstr(text, "cell-size 6 3") != NULL, "dice el tamano de las celdas");
+        check(strstr(text, "theme oscuro") != NULL, "dice el tema");
+        check(strstr(text, "sheet \"gastos\"") != NULL, "cada hoja abre su bloque");
+        check(strstr(text, "cell A1 \"30\"") != NULL, "y dentro van sus celdas");
+        check(strstr(text, "cell A1 \"\\\"hola\\\"\"") != NULL, "las comillas del fuente salen escapadas");
+        check(strstr(text, "  select E3\n") != NULL, "guarda donde estaba el cursor");
+        check(strstr(text, "  scroll 15 0\n") != NULL, "y lo deslizado que llevaba la vista");
+
+        CellManager back = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+        int ignored = -1;
+
+        check(document_load(text, &back, &ignored) == 1, "el documento se reconoce por su cabecera");
+        check(ignored == 0, "y no sobra ninguna linea");
+        check(sheet_count(&back) == 2, "vuelven las dos hojas");
+        check(strcmp(sheet_name_at(&back, 0), "Sheet1") == 0, "la primera hoja trae su nombre");
+        check(strcmp(sheet_name_at(&back, 1), "gastos") == 0, "y la segunda el suyo");
+        check(cellWidth == 6 && cellHeight == 3, "vuelve el tamano de las celdas");
+        check(strcmp(theme_name(), "oscuro") == 0, "vuelve el tema");
+
+        // Al abrir, la que se ve es la primera, como en el editor.
+        check_content(&back, 0, 0, "\"hola\"", "el fuente con comillas vuelve desenredado");
+        check_content(&back, 1, 3, "A1 + 2", "y el resto de las celdas");
+        check(sheet_state(&back)->cursor.x == 4 && sheet_state(&back)->cursor.y == 2, "vuelve donde estaba el cursor");
+        check(sheet_state(&back)->originX == 15, "y vuelve lo deslizado de la vista");
+
+        sheet_select(&back, 1);
+        check_content(&back, 0, 0, "30", "la otra hoja trae lo suyo");
+
+        // Un documento que empieza con un campo que no se conoce se lee igual:
+        // asi un archivo de una version futura no deja de abrirse.
+        char *future = NULL;
+        size_t futureLength = strlen(text) + 64;
+
+        future = (char *) malloc(futureLength);
+        snprintf(future, futureLength, "%s  campo-nuevo 7\n", text);
+
+        CellManager newer = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+        int newerIgnored = 0;
+
+        check(document_load(future, &newer, &newerIgnored) == 1, "un documento con un campo nuevo se abre");
+        check(newerIgnored == 1, "y se cuenta lo que no se entendo");
+        check(sheet_count(&newer) == 2, "con las hojas que si se entendieron");
+
+        free(future);
+        free_cell_manager(&newer);
+        free_cell_manager(&back);
+    }
+
+    free(text);
+
+    set_cell_size(4, 2);
+    theme_set_by_name("normal");
+    free_cell_manager(&doc);
+
+    // Los caminos de los dos formatos.
+    check(document_is_path("hojas.clex"), "un .clex es el documento del editor");
+    check(!document_is_path("hojas.cle"), "un .cle es el guion del lenguaje");
+
+    char other[64];
+    check(document_change_extension("notas.cle", ".clex", other, sizeof(other)) && strcmp(other, "notas.clex") == 0,
+          "del guion se pasa al documento del lado");
+    check(document_change_extension("notas.clex", ".cle", other, sizeof(other)) && strcmp(other, "notas.cle") == 0,
+          "y del documento al guion");
+    check(document_change_extension("sinextension", ".clex", other, sizeof(other)) && strcmp(other, "sinextension.clex") == 0,
+          "un nombre sin extension la coge detras");
+    check(document_change_extension("carpeta.d/me", ".clex", other, sizeof(other)) && strcmp(other, "carpeta.d/me.clex") == 0,
+          "un punto del camino no es una extension");
 
     free_cell_manager(&book);
 

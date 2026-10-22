@@ -1,6 +1,7 @@
 #include "keys.h"
 
 #include "clipboard.h"
+#include "document.h"
 #include "file.h"
 #include "ref.h"
 #include "script.h"
@@ -439,9 +440,9 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                 break;
             }
             case KEY_CTRL_S:
-                if (editor->path == NULL) {
+                if (editor->savePath == NULL) {
                     set_message(manager, "no file to save");
-                } else if (save_file(editor->path, manager) == FILE_LOADED) {
+                } else if (save_document(editor->savePath, manager) == FILE_LOADED) {
                     set_message(manager, "saved");
                     sheet_mark_saved(manager);
                     keepMessage = true;
@@ -450,6 +451,35 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                     keepMessage = true;
                 }
                 break;
+            case KEY_CTRL_E: {
+                // La hoja que se esta viendo, escrita como guion del lenguaje, al
+                // lado del documento. Es lo que se puede editar a mano o correr con
+                // el interprete.
+                if (editor->savePath == NULL) {
+                    set_error_message(manager, "nothing to export");
+                    keepMessage = true;
+                    break;
+                }
+
+                char script[1024];
+
+                if (!document_change_extension(editor->savePath, ".cle", script, sizeof(script))) {
+                    set_error_message(manager, "the name does not fit");
+                    keepMessage = true;
+                    break;
+                }
+
+                if (save_script(script, manager) == FILE_LOADED) {
+                    char message[MESSAGE_SIZE];
+                    snprintf(message, sizeof(message), "exported %s", script);
+                    set_message(manager, message);
+                } else {
+                    set_error_message(manager, "cannot write the script");
+                }
+
+                keepMessage = true;
+                break;
+            }
             default:
                 if (key >= 32 && key < 127) {
                     // Una tecla cualquiera empieza a editar la celda, y

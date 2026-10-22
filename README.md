@@ -3,8 +3,10 @@
 A spreadsheet that lives in the terminal, written in C, with a dedicated
 scripting language (`.cle` files).
 
-The editor writes the sheet as a script, the language evaluates it and gives
-back the value of every cell.
+The editor hands the sheet to the language as a script, the language evaluates it
+and gives back the value of every cell. The editor keeps its own document
+(`.clex`) apart from the script, so a `.cle` stays something to write by hand:
+see [Two files](#two-files).
 
 ## Layout
 
@@ -45,6 +47,7 @@ Inside `TUI/` the editor is in pieces, each one with its own job:
 | `TUI/clipboard.c`    | the clipboard of the editor, and the one of the system |
 | `TUI/theme.c`        | the colors: what each part of the screen looks like   |
 | `TUI/complete.c`     | the words the tab key can complete                   |
+| `TUI/document.c`     | the `.clex` file: the structure of the document       |
 | `TUI/script.c`       | runs the sheet and fills the cells with their values |
 | `TUI/file.c`         | reads and writes the `.cle` file                  |
 
@@ -68,6 +71,10 @@ Two binaries are built:
 make run         # opens the editor with sample.cle
 make run-script  # runs sample.cle and prints the values of the cells
 ```
+
+`make run` opens a script, so the first `Ctrl+S` writes `sample.clex` next to it
+and leaves `sample.cle` as it was. Opening that `.clex` is how the editor is
+normally started after that: `build/celex sample.clex`.
 
 `make clean` removes the binaries.
 
@@ -208,7 +215,8 @@ the keyboard, so a slow frame is a key that answers late.
 | `Ctrl+A`           | add a sheet after the one being seen      |
 | `Ctrl+D`           | remove the sheet being seen               |
 | `Ctrl+F`           | write the name of the sheet being seen    |
-| `Ctrl+S`           | save the sheet into the opened file       |
+| `Ctrl+S`           | save the document (`.clex`)               |
+| `Ctrl+E`           | export the sheet being seen as a `.cle`   |
 | `Ctrl+Z`           | undo the last change                      |
 | `Ctrl+Y`           | redo the change that was undone           |
 | `Ctrl+C`           | copy the cell, or the text being edited    |
@@ -411,28 +419,63 @@ while total < 100 {
 - **Blocks**: `{ ... }`. A statement ends with a new line or a `;`.
 - The numbers are integers for now.
 
-## File format
+## Two files
 
-A `.cle` file is Celex Script source. Every line assigns the source of a
-cell to the cell it belongs to, addressed with the usual spreadsheet
-reference (`A1`, `B2`, `AA10`), and every sheet starts with a line that gives
-its name:
+The editor and the language each have their own file, so neither gets in the way
+of the other:
+
+| Extension | What it is                                                                        |
+|-----------|-----------------------------------------------------------------------------------|
+| `.cle`    | Celex Script source. Hand-written, plain, and what the interpreter runs.           |
+| `.clex`   | The editor's document: sheets, the size of the cells, the colors, where you were.  |
+
+A `.cle` opens in the editor as one sheet, named after the file, and everything
+that is not a cell assignment — a `print`, an `if`, a variable — is left alone.
+The editor never overwrites a `.cle` when it saves: `Ctrl+S` writes the `.clex`
+next to it, and says so in the bar. `Ctrl+E` goes the other way, and writes the
+sheet being seen out as a clean `.cle`, with nothing of the editor in it.
+
+The `.clex` is written for the editor to read, not for editing by hand:
 
 ```
-SHEET = "Sheet1"
+celex-document 1
+theme oscuro
+cell-size 4 2
+sheet "numeros"
+  select E3
+  scroll 15 0
+  cell A1 "1"
+  cell B1 "A1 + A2"
+  cell C1 "\"hola\""
+end-sheet
+sheet "gastos"
+  select A1
+  scroll 0 0
+end-sheet
+```
+
+- One thing per line, and a word for every block: `celex-document` opens the file
+  and says which version of the format it is, `sheet` opens a sheet and
+  `end-sheet` closes it.
+- What is between quotes is escaped: `\"` for a quote and `\\` for a backslash. A
+  cell is always one line, so a cell source with quotes in it round-trips.
+- `select` and `scroll` remember which cell had the cursor and how far the view
+  had slid, for every sheet.
+- A line that is not understood is counted and skipped, so a file from a later
+  version still opens.
+- A cell with no content has no line, like in a script.
+
+A `.cle`, which is what `Ctrl+E` writes, is one line per cell — the reference,
+`=`, and the source of the cell — with the cells sorted by column and then by row,
+so a cell comes after the cells it uses:
+
+```
 A1 = 1
 A2 = 2
 B1 = A1 + A2
 C1 = "hola"
-
-SHEET = "gastos"
-A1 = 30
 ```
 
-- The name line is an assignment to a variable called `SHEET`, so the file stays
-  a valid Celex Script program: the language sees a variable, the editor sees the
-  beginning of a sheet. A file without any name line is one sheet, which is what
-  the files had before the sheets existed.
 - The reference is scanned as a cell reference (`TOKEN_REF`) by the scanner,
   `=` as an assignment and the right hand side as the expression of the
   cell, so the file is valid Celex Script.
@@ -513,9 +556,8 @@ With `--values` the output of the program goes to stderr and stdout only
 carries the resulting cells, one per line, with the same format the editor
 reads.
 
-The interpreter runs the whole file as one program, so on a file with sheets it
-sees the cells of all of them together: the `SHEET` lines are only names, and a
-reference written in two sheets is one reference for the interpreter. The editor
-does not have that mixing, because it evaluates one sheet at a time — the one
-being seen — and writes only that sheet when it calls the interpreter. To run a
-single sheet outside the editor, take its lines out of the file.
+The interpreter runs one program, and a `.cle` is one sheet, so what the
+interpreter sees is what the sheet being seen holds. The editor evaluates the same
+way: one sheet at a time, the one being seen, which is why a reference in one
+sheet never reaches into another. The sheets, the colors and the rest of the
+document live in the `.clex`, which the interpreter does not read.

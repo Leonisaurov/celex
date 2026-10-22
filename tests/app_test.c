@@ -237,6 +237,15 @@ static char *read_system_clipboard(void) {
 
 #endif
 
+// El camino de al lado, con otra extension: el editor abre un .cle y guarda un
+// .clex, y al reves con el guion que exporta.
+static void other_path(const char *path, const char *extension, char *into, size_t size) {
+    const char *dot = strrchr(path, '.');
+    size_t stem = dot != NULL ? (size_t) (dot - path) : strlen(path);
+
+    snprintf(into, size, "%.*s%s", (int) stem, path, extension);
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         fprintf(stderr, "Uso: %s <editor>\n", argv[0]);
@@ -271,7 +280,8 @@ int main(int argc, char **argv) {
     keys[length++] = 0x03;    // Ctrl+C
     keys[length++] = 'l';     // mover a la derecha
     keys[length++] = 0x16;    // Ctrl+V
-    keys[length++] = 0x13;    // Ctrl+S
+    keys[length++] = 0x05;    // Ctrl+E: exportar el guion .cle
+    keys[length++] = 0x13;    // Ctrl+S: guardar el documento .clex
     keys[length++] = 'q';     // salir
     keys[length++] = 'q';
 
@@ -283,17 +293,35 @@ int main(int argc, char **argv) {
     int status = run_editor(editor, sheetPath, keysPath, outPath);
     check(status == 0, "el editor sale sin errores");
 
-    // Lo que se guardo en la hoja: la celda de la que se copio y la celda
-    // donde se pego.
+    // Lo que se guardo en el guion exportado: la celda de la que se copio y la
+    // celda donde se pego. El .cle queda como un programa de celex, sin nada del
+    // editor dentro.
     char *sheet = read_file(sheetPath);
-    check(sheet != NULL, "se puede leer la hoja guardada");
+    check(sheet != NULL, "se puede leer el guion exportado");
 
     if (sheet != NULL) {
         check_has(sheet, "A1 = 6*7", "la celda de la que se copio se guardo");
         check_has(sheet, "B1 = 6*7", "la celda donde se pego se guardo");
+        check(strstr(sheet, "theme") == NULL && strstr(sheet, "cell ") == NULL,
+              "el guion exportado no lleva campos del editor");
     }
 
     free(sheet);
+
+    // Y lo que guardo el Ctrl+S, que es el documento del editor, al lado.
+    char documentPath[512];
+    other_path(sheetPath, ".clex", documentPath, sizeof(documentPath));
+
+    char *document = read_file(documentPath);
+    check(document != NULL, "el editor guarda un documento al lado del guion");
+
+    if (document != NULL) {
+        check_has(document, "celex-document 1", "el documento empieza con su cabecera");
+        check_has(document, "cell A1 \"6*7\"", "el documento guarda las celdas con su estructura");
+    }
+
+    free(document);
+    remove(documentPath);
 
     // Lo que se dibujo en la pantalla: la formula pegada y el borde
     // punteado de la celda copiada.
@@ -345,6 +373,7 @@ int main(int argc, char **argv) {
         pasted[pastedLength++] = end[i];
     }
 
+    pasted[pastedLength++] = 0x05;    // Ctrl+E: exportar el guion
     pasted[pastedLength++] = 0x13;    // Ctrl+S
     pasted[pastedLength++] = 'q';     // salir
 
@@ -494,7 +523,7 @@ int main(int argc, char **argv) {
     sheets[sheetsLength++] = '7';
     sheets[sheetsLength++] = '7';
     sheets[sheetsLength++] = 0x1b;              // fuera de la celda
-    sheets[sheetsLength++] = 0x13;              // Ctrl+S
+    sheets[sheetsLength++] = 0x13;              // Ctrl+S: el documento
     sheets[sheetsLength++] = 'q';
 
     if (!write_file(keysPath, sheets, sheetsLength)) {
@@ -505,19 +534,37 @@ int main(int argc, char **argv) {
     status = run_editor(editor, sheetPath, keysPath, outPath);
     check(status == 0, "el editor sale sin errores");
 
-    sheet = read_file(sheetPath);
+    other_path(sheetPath, ".clex", documentPath, sizeof(documentPath));
+    document = read_file(documentPath);
 
-    if (sheet != NULL) {
-        check_has(sheet, "SHEET = \"Sheet1\"", "la primera hoja sale con su nombre");
-        check_has(sheet, "SHEET = \"Sheet2\"", "la hoja nueva sale con su nombre");
-        check_has(sheet, "A1 = 77", "la celda de la hoja nueva se guarda");
+    if (document != NULL) {
+        // La hoja que se importa de un guion se llama como el archivo, para
+        // reconocerla en las pestanas.
+        const char *base = strrchr(sheetPath, '/');
+
+        if (base == NULL) {
+            base = strrchr(sheetPath, '\\');
+        }
+
+        base = base != NULL ? base + 1 : sheetPath;
+
+        const char *dot = strrchr(base, '.');
+        char expected[64];
+        snprintf(expected, sizeof(expected), "sheet \"%.*s\"", (int) (dot - base), base);
+
+        check_has(document, expected, "la hoja importada coge el nombre del archivo");
+        check_has(document, "sheet \"Sheet2\"", "la hoja nueva sale con su nombre");
+        check_has(document, "cell A1 \"77\"", "la celda de la hoja nueva se guarda");
 
         // La celda de la primera hoja sigue siendo la de antes: las hojas no se
         // pisan entre ellas.
-        check(strstr(sheet, "A1 = 1") != NULL, "la primera hoja conserva su celda");
+        check(strstr(document, "cell A1 \"1\"") != NULL, "la primera hoja conserva su celda");
+    } else {
+        check(false, "el documento con dos hojas se guardo");
     }
 
-    free(sheet);
+    free(document);
+    remove(documentPath);
 
     // Abriendo el archivo guardado otra vez, las dos pestañas se ven.
     screen = read_file(outPath);

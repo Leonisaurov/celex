@@ -1,6 +1,7 @@
 #include "theme.h"
 
 #include <stddef.h>
+#include <string.h>
 
 // Apagar lo que hubiera: es el principio de toda secuencia de estilo, y lo que
 // llevan los estilos que no pintan nada.
@@ -82,6 +83,22 @@ const char *theme_next(void) {
     }
 
     return themes[current].name;
+}
+
+int theme_set_by_name(const char *name) {
+    if (name == NULL || name[0] == '\0') {
+        return 0;
+    }
+
+    for (int i = 0; i < themeCount; i++) {
+        if (strcmp(themes[i].name, name) == 0) {
+            current = i;
+
+            return 1;
+        }
+    }
+
+    return 0;
 }
 
 int theme_count(void) {

@@ -111,6 +111,10 @@ static int byte_key(unsigned char byte) {
             return KEY_ENTER;
         case 0x7f:
             return KEY_BACKSPACE;
+        // Algunas terminales mandan el retroceso como Ctrl+H, y el Windows
+        // Terminal tambien lo usa asi según como este configurado.
+        case 8:
+            return KEY_BACKSPACE;
         case '\t':
             return KEY_TAB;
         default:

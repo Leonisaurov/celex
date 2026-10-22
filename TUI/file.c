@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "document.h"
 #include "cell.h"
 #include "ref.h"
 
@@ -20,101 +21,170 @@ static char *trim(char *text) {
     return text;
 }
 
-// Como se marca una hoja en el archivo: una asignacion a la variable SHEET con
-// el nombre entre comillas. El lenguaje la ve como una variable mas, asi que un
-// archivo de varias hojas sigue siendo un programa valido.
-#define SHEET_VARIABLE "SHEET"
-
-// El nombre que estaba escrito en una linea `SHEET = "..."`.
-static void sheet_line_name(char *value, char *into, size_t size) {
-    char *first = strchr(value, '"');
-
-    if (first == NULL) {
-        snprintf(into, size, "%s", value);
-        return;
-    }
-
-    first++;
-
-    char *last = strrchr(first, '"');
-
-    if (last == NULL || last < first) {
-        snprintf(into, size, "%s", first);
-        return;
-    }
-
-    *last = '\0';
-    snprintf(into, size, "%s", first);
-}
-
-int load_file(const char *path, CellManager *manager, int *ignored) {
-    int skipped = 0;
-    bool named = false;
-
-    if (ignored != NULL) {
-        *ignored = 0;
-    }
-
-    FILE *file = fopen(path, "r");
+// El archivo entero, en un texto. Quien lo recibe lo suelta.
+static char *read_all(const char *path) {
+    FILE *file = fopen(path, "rb");
     if (file == NULL) {
-        return FILE_NOT_FOUND;
+        return NULL;
     }
 
-    char line[4096];
-    while (fgets(line, sizeof(line), file) != NULL) {
-        char *text = trim(line);
+    size_t capacity = 4096;
+    size_t length = 0;
+    char *text = (char *) malloc(capacity);
 
-        if (text[0] == '\0' || text[0] == '#') {
-            continue;
-        }
+    if (text == NULL) {
+        fclose(file);
+        return NULL;
+    }
 
-        char *separator = strchr(text, '=');
-        if (separator == NULL) {
-            skipped++;
-            continue;
-        }
+    char buffer[1024];
 
-        *separator = '\0';
-        char *reference = trim(text);
-        char *value = trim(separator + 1);
+    while (fgets(buffer, sizeof(buffer), file) != NULL) {
+        size_t size = strlen(buffer);
 
-        // El principio de una hoja.
-        if (strcmp(reference, SHEET_VARIABLE) == 0) {
-            char name[SHEET_NAME_SIZE];
-            sheet_line_name(value, name, sizeof(name));
-
-            if (!named) {
-                // La primera linea le pone nombre a la hoja que ya habia, para
-                // no dejar una hoja vacia delante.
-                sheet_rename(manager, 0, name);
-                named = true;
-            } else {
-                sheet_add(manager, name);
+        if (length + size + 1 > capacity) {
+            while (length + size + 1 > capacity) {
+                capacity *= 2;
             }
 
-            continue;
+            char *grown = (char *) realloc(text, capacity);
+            if (grown == NULL) {
+                free(text);
+                fclose(file);
+                return NULL;
+            }
+
+            text = grown;
         }
 
-        unsigned int x = 0;
-        unsigned int y = 0;
-        if (!ref_parse(reference, &x, &y)) {
-            skipped++;
-            continue;
-        }
-
-        set_cell_content(manager, x, y, value);
+        memcpy(text + length, buffer, size + 1);
+        length += size;
     }
 
     fclose(file);
+
+    return text;
+}
+
+// El nombre del archivo, sin camino ni extension, para bautizar la hoja que se
+// importa de un guion.
+static void file_stem(const char *path, char *into, size_t size) {
+    const char *name = path;
+
+    for (const char *at = path; *at != '\0'; at++) {
+        if (*at == '/' || *at == '\\') {
+            name = at + 1;
+        }
+    }
+
+    const char *dot = strrchr(name, '.');
+    size_t length = dot != NULL ? (size_t) (dot - name) : strlen(name);
+
+    if (length >= size) {
+        length = size - 1;
+    }
+
+    memcpy(into, name, length);
+    into[length] = '\0';
+}
+
+// El guion del lenguaje, linea por linea: cada asignacion a una referencia es el
+// fuente de una celda. Lo demas se ignora y se cuenta, porque un guion puede ser
+// un programa con print, if o for, y eso no son celdas.
+static int load_script(char *text, CellManager *manager, const char *path, int *ignored) {
+    int skipped = 0;
+
+    // La hoja se llama como el archivo, para reconocerla en las pestanas.
+    char name[SHEET_NAME_SIZE];
+    file_stem(path, name, sizeof(name));
+
+    if (name[0] != '\0') {
+        sheet_rename(manager, 0, name);
+    }
+
+    char *line = text;
+
+    while (line != NULL) {
+        char *next = strchr(line, '\n');
+
+        if (next != NULL) {
+            *next = '\0';
+            next++;
+        }
+
+        char *trimmed = trim(line);
+
+        if (trimmed[0] != '\0') {
+            char *separator = strchr(trimmed, '=');
+
+            if (separator == NULL) {
+                skipped++;
+            } else {
+                *separator = '\0';
+                char *reference = trim(trimmed);
+                char *value = trim(separator + 1);
+
+                unsigned int x = 0;
+                unsigned int y = 0;
+
+                // Una asignacion a una variable no es una celda: el guion puede
+                // tener su programa, y aqui solo se importan las celdas.
+                if (!ref_parse(reference, &x, &y)) {
+                    skipped++;
+                } else {
+                    set_cell_content(manager, x, y, value);
+                }
+            }
+        }
+
+        line = next;
+    }
 
     if (ignored != NULL) {
         *ignored = skipped;
     }
 
-    // Se vuelve a la primera hoja, que es la que se espera al abrir un archivo.
-    sheet_select(manager, 0);
-
     return FILE_LOADED;
+}
+
+int load_file(const char *path, CellManager *manager, int *ignored) {
+    if (ignored != NULL) {
+        *ignored = 0;
+    }
+
+    char *text = read_all(path);
+
+    if (text == NULL) {
+        return FILE_NOT_FOUND;
+    }
+
+    // El documento del editor trae su cabecera. Si no la tiene, es un guion del
+    // lenguaje, y se importa como una sola hoja.
+    int skipped = 0;
+
+    if (document_load(text, manager, &skipped)) {
+        free(text);
+
+        if (ignored != NULL) {
+            *ignored = skipped;
+        }
+
+        return FILE_LOADED;
+    }
+
+    // De un guion se importa una hoja: lo que hubiera en el editor no tiene nada
+    // que ver con el archivo que se esta abriendo.
+    workbook_clear(manager);
+
+    int status = load_script(text, manager, path, &skipped);
+
+    free(text);
+
+    if (ignored != NULL) {
+        *ignored = skipped;
+    }
+
+    return status;
 }
 
 typedef struct {
@@ -171,11 +241,9 @@ static int collect_entry(void *const context, struct hashmap_element_s *const el
     return 0;
 }
 
-// El guion de una hoja: una linea por celda, en el orden en que se pueden
-// calcular.
-static char *state_source(SheetState *state) {
+char *sheet_source(CellManager *manager) {
     FileEntries entries = {NULL, 0, 0};
-    hashmap_iterate_pairs(&state->map, collect_entry, &entries);
+    hashmap_iterate_pairs(&sheet_state(manager)->map, collect_entry, &entries);
 
     qsort(entries.items, entries.count, sizeof(FileEntry), compare_entries);
 
@@ -214,74 +282,32 @@ static char *state_source(SheetState *state) {
     return source;
 }
 
-char *sheet_source(CellManager *manager) {
-    return state_source(sheet_state(manager));
-}
-
-// El archivo entero: cada hoja empieza con su linea de nombre.
-char *workbook_source(CellManager *manager) {
-    size_t capacity = 1;
-
-    for (int i = 0; i < sheet_count(manager); i++) {
-        capacity += strlen(sheet_name_at(manager, i)) + 24;
-
-        char *part = state_source(&sheet_at(manager, i)->state);
-
-        if (part == NULL) {
-            continue;
-        }
-
-        capacity += strlen(part);
-        free(part);
-    }
-
-    char *source = (char *) malloc(capacity);
-    if (source == NULL) {
-        return NULL;
-    }
-
-    source[0] = '\0';
-
-    for (int i = 0; i < sheet_count(manager); i++) {
-        strcat(source, SHEET_VARIABLE " = \"");
-        strcat(source, sheet_name_at(manager, i));
-        strcat(source, "\"\n");
-
-        char *part = state_source(&sheet_at(manager, i)->state);
-
-        if (part != NULL) {
-            strcat(source, part);
-            free(part);
-        }
-    }
-
-    return source;
-}
-
-static int write_source(const char *path, char *source) {
-    if (source == NULL) {
+static int write_text(const char *path, char *text) {
+    if (text == NULL) {
         return FILE_ERROR;
     }
 
-    FILE *file = fopen(path, "w");
+    FILE *file = fopen(path, "wb");
     if (file == NULL) {
-        free(source);
+        free(text);
         return FILE_ERROR;
     }
 
-    fputs(source, file);
+    fputs(text, file);
     fclose(file);
-    free(source);
+    free(text);
 
     return FILE_LOADED;
 }
 
-int save_file(const char *path, CellManager *manager) {
-    return write_source(path, workbook_source(manager));
+// El documento del editor: la pantalla y todas las hojas, en el formato .clex.
+int save_document(const char *path, CellManager *manager) {
+    return write_text(path, document_source(manager));
 }
 
-// Solo la hoja que se esta viendo, que es lo que evalua el interprete de fuera:
-// las celdas de otras hojas no pueden verse desde aqui.
-int save_sheet_file(const char *path, CellManager *manager) {
-    return write_source(path, sheet_source(manager));
+// La hoja que se esta viendo como guion del lenguaje: sin colores, sin nombres de
+// hoja y sin nada que no sea celex script, para poder editarlo a mano o correrlo
+// con el interprete.
+int save_script(const char *path, CellManager *manager) {
+    return write_text(path, sheet_source(manager));
 }
