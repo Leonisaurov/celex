@@ -471,6 +471,54 @@ int main(int argc, char **argv) {
     remove(keysPath);
     remove(outPath);
 
+    // Y el raton: un clic en una celda lleva el cursor, un clic en un boton de la
+    // fila de herramientas hace lo que su tecla, y el clic derecho copia. Las
+    // secuencias son las que mandaria una terminal: las coordenadas empiezan en
+    // uno, y la fila de las herramientas es la 22 en una pantalla de 24.
+    if (!write_file(sheetPath, "A1 = 1\n", 7)) {
+        printf("  FALLO: no se puede escribir el archivo de la hoja\n");
+        return 1;
+    }
+
+    const char *clickedKeys = "\x1b[<0;17;9M"   // la celda C3
+                              "\x1b[<0;9;22M"   // el boton de la negrita
+                              "\x13"            // Ctrl+S: guardar el documento
+                              "\x1b[<2;7;3M"    // clic derecho en A1: copiarla
+                              "qq";
+
+    if (!write_file(keysPath, clickedKeys, strlen(clickedKeys))) {
+        printf("  FALLO: no se puede escribir el archivo de las teclas\n");
+        return 1;
+    }
+
+    status = run_editor(editor, sheetPath, keysPath, outPath);
+    check(status == 0, "el editor sale sin errores con el raton");
+
+    other_path(sheetPath, ".clex", documentPath, sizeof(documentPath));
+    document = read_file(documentPath);
+
+    if (document != NULL) {
+        check_has(document, "select C3", "el clic en la celda puso el cursor ahi");
+        check_has(document, "format C3 bold", "y el clic en el boton puso el formato");
+    } else {
+        check(false, "el documento de los clics se guardo");
+    }
+
+    free(document);
+    remove(documentPath);
+
+    screen = read_file(outPath);
+
+    if (screen != NULL) {
+        check_has(screen, "copied A1", "el clic derecho copia la celda");
+    }
+
+    free(screen);
+
+    remove(sheetPath);
+    remove(keysPath);
+    remove(outPath);
+
     // Y los colores. El tema de empezar no pinta nada con color, y el Ctrl+T
     // pasa a uno que si: lo que se comprueba es que la secuencia del color de
     // las rayas llegue a la pantalla.

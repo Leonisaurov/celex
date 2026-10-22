@@ -246,6 +246,12 @@ the keyboard, so a slow frame is a key that answers late.
 | `Ctrl+V`           | paste into the cell, or into the text      |
 | `Ctrl+L`           | reload the file                           |
 | `q`                | quit                                      |
+| click              | put the cursor in that cell                |
+| double click       | open that cell to be written               |
+| right click        | copy that cell                             |
+| wheel              | one row up, or down                        |
+| click on a tab     | change the sheet                           |
+| click on a button  | the key of that button                     |
 
 While a cell is being edited the arrows move the text cursor inside it,
 and the cell under the cursor is the one that shows where the text goes.
@@ -356,6 +362,20 @@ tools off
 
 What fits is what is drawn: in eighty columns the row shows ten buttons and the
 rest wait for a wider window, like the tabs do.
+
+The mouse does the same things the keys do, wherever it is asked for: a click in
+a cell puts the cursor there, a double click opens the cell to be edited, a right
+click copies it, the wheel walks the cursor up and down a row at a time, and a
+click on a tab changes the sheet. A click on a button sends the key of that
+button — there is no code behind the buttons that the keys do not have. A click
+somewhere else than the cell being written finishes the writing first, the way
+`Esc` does, so nothing typed is lost by reaching for the mouse.
+
+The editor asks the terminal for the clicks when it starts and stops asking when
+it leaves, so the terminal goes back to normal after it. Selecting text with the
+mouse for the terminal's own copy is still there, but it needs the modifier the
+terminal uses for that — `Shift` in Windows Terminal, and in most terminals on
+Linux and macOS.
 
 The file has sheets, and the sheets have their own row of tabs above the status
 bar. `Ctrl+A` puts a new sheet after the one being seen, `Ctrl+N` and `Ctrl+P`

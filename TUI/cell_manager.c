@@ -48,9 +48,9 @@ void sheet_select(CellManager *manager, int index);
 // Y las herramientas la suya, encima de las hojas, cuando estan puestas.
 #define TOOLS_HEIGHT 1
 
-// Las filas de abajo. La rejilla acaba donde empieza lo demas, y lo demas son
-// tres filas cuando las herramientas estan puestas y dos cuando no: quien trabaja
-// a teclado se queda con dos filas mas de hoja.
+// Las filas de abajo. La rejilla acaba donde empieza lo demas: la fila de las
+// herramientas, la de las pestanas y la de estado. Escondiendo las herramientas
+// la rejilla gana una fila.
 int grid_bottom(const CellManager *manager, int height) {
     return height - STATUS_HEIGHT - SHEET_BAR_HEIGHT - (manager->showTools ? TOOLS_HEIGHT : 0);
 }
@@ -59,7 +59,7 @@ int tools_row(const CellManager *manager, int height) {
     return grid_bottom(manager, height);
 }
 
-int sheet_row(const CellManager *manager, int height) {
+int sheet_row(int height) {
     return height - STATUS_HEIGHT - SHEET_BAR_HEIGHT;
 }
 
@@ -1642,15 +1642,18 @@ static void paint_grid(CellManager *manager) {
             int base_x = HEADER_WIDTH + column * STRIDE_X + 1 - SHEET->originX;
             int base_y = HEADER_HEIGHT + row * STRIDE_Y + 1 - SHEET->originY;
 
-            // Si el texto no cabe, se ve la parte donde esta el cursor.
+            // Si el texto no cabe, se ve la parte donde esta el cursor. Lo que
+            // cabe en la celda se mira como un numero sin signo, que es lo que
+            // son los caracteres contados.
             size_t total = char_count(content);
             size_t cursor_char = is_cursor ? char_index(content, SHEET->editOffset) : 0;
+            size_t capacity = (size_t) CELL_CAPACITY;
 
             size_t start = 0;
-            if (total > CELL_CAPACITY) {
-                start = cursor_char >= CELL_CAPACITY ? cursor_char - CELL_CAPACITY + 1 : 0;
+            if (total > capacity) {
+                start = cursor_char >= capacity ? cursor_char - capacity + 1 : 0;
 
-                size_t max_start = total - CELL_CAPACITY;
+                size_t max_start = total - capacity;
                 if (start > max_start) start = max_start;
             }
 
@@ -1658,8 +1661,8 @@ static void paint_grid(CellManager *manager) {
             // poder alinear cada linea.
             size_t visible = total > start ? total - start : 0;
 
-            if (visible > CELL_CAPACITY) {
-                visible = CELL_CAPACITY;
+            if (visible > capacity) {
+                visible = capacity;
             }
 
             size_t index = 0;
@@ -1890,6 +1893,104 @@ static void pan_view(CellManager *manager, int *dx, int *dy) {
     SHEET->originY = oldY;
 }
 
+// Que hoja esta en la columna x de la fila de las pestanas, o -1 si la columna
+// no cae en ninguna. Recorre la fila igual que la pinta print_sheets, para que
+// lo que se clica sea lo que se ve.
+int sheet_at_column(CellManager *manager, int x) {
+    int width = manager->size.x < 20 ? 20 : manager->size.x;
+    int sheets = sheet_count(manager);
+
+    if (x < 0 || x >= width || sheets == 0) {
+        return -1;
+    }
+
+    int *sizes = (int *) malloc((size_t) sheets * sizeof(int));
+
+    if (sizes == NULL) {
+        return -1;
+    }
+
+    for (int i = 0; i < sheets; i++) {
+        const char *name = sheet_name_at(manager, i);
+
+        // Con el Ctrl+F, la pestana que se esta viendo lleva lo que se escribe, y
+        // ahi es donde se clica.
+        if (manager->renaming && i == manager->active) {
+            name = manager->renameText;
+        }
+
+        sizes[i] = utf8_columns(name);
+    }
+
+    int first = 0;
+    int last = sheets;
+
+    sheet_bar_range(sizes, sheets, manager->active, width, &first, &last);
+
+    int used = 0;
+
+    if (first > 0) {
+        used = 1;
+    }
+
+    int found = -1;
+
+    for (int i = first; i < last; i++) {
+        if (i > first) {
+            used++;
+        }
+
+        if (x >= used && x < used + sizes[i]) {
+            found = i;
+            break;
+        }
+
+        used += sizes[i];
+    }
+
+    free(sizes);
+
+    return found;
+}
+
+// En que celda de la hoja cae una columna y una fila de la pantalla. Devuelve 0
+// si no cae en ninguna: el margen de los numeros, la linea del separador, la
+// cabecera de las letras, o lo que queda detras de la rejilla.
+int cell_at_screen(CellManager *manager, int x, int y, unsigned int *cellX, unsigned int *cellY) {
+    int height = manager->size.y < 6 ? 6 : manager->size.y;
+
+    // El margen de la izquierda, la cabecera de arriba y las filas de abajo no
+    // son celdas: el desplazamiento de la vista no cuenta con ellos.
+    if (x < HEADER_WIDTH || y < HEADER_HEIGHT || y >= grid_bottom(manager, height)) {
+        return 0;
+    }
+
+    // La primera columna de una celda esta detras del separador, y lo mismo pasa
+    // con las filas: se resta ese separador antes de repartir.
+    int column = x - HEADER_WIDTH + SHEET->originX - 1;
+    int row = y - HEADER_HEIGHT + SHEET->originY - 1;
+
+    if (column < 0 || row < 0) {
+        return 0;
+    }
+
+    // Dentro de cada bloque de STRIDE, los primeros CELL_SIZE son la celda y el
+    // ultimo es la raya de la rejilla.
+    if (column % STRIDE_X >= CELL_SIZE_X || row % STRIDE_Y >= CELL_SIZE_Y) {
+        return 0;
+    }
+
+    if (cellX != NULL) {
+        *cellX = (unsigned int) (column / STRIDE_X);
+    }
+
+    if (cellY != NULL) {
+        *cellY = (unsigned int) (row / STRIDE_Y);
+    }
+
+    return 1;
+}
+
 void print_cell_manager(CellManager *manager) {
     int dx = 0;
     int dy = 0;
@@ -1972,7 +2073,7 @@ void sheet_bar_range(const int *sizes, int count, int active, int width, int *fi
 void print_sheets(CellManager *manager) {
     int width = manager->size.x < 20 ? 20 : manager->size.x;
     int height = manager->size.y < 6 ? 6 : manager->size.y;
-    int y = sheet_row(manager, height);
+    int y = sheet_row(height);
 
     // Las hojas unidas, para poder comparar con la linea de antes.
     char joined[MESSAGE_SIZE * 4];

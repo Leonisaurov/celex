@@ -38,20 +38,32 @@ tiene acciones propias: cada boton *es* su tecla, asi que la barra y el teclado 
 pueden contradecirse. Lo que no cabe en el ancho no se pinta, como las pestanas.
 En el documento se guarda `tools off`, y sin esa linea la fila esta puesta.
 
+El raton tambien esta: la terminal manda `ESC[<boton;columna;fila M` (o `m` al
+soltar) y eso es lo que lee `TUI/input.c`. En Windows, la consola da `MOUSE_EVENT`
+en vez de secuencias, y `TUI/tui_platform.c` los convierte en la misma secuencia
+para que solo haya un camino despues. El reporte se pide al entrar y se apaga al
+salir, no sea que la terminal se quede mandando clics a lo que venga detras.
+
+Un clic en una celda mueve el cursor, dos clics encima de la misma abren la celda
+a escribir, el boton derecho copia, la rueda pasa de fila, una pestana cambia de
+hoja y un boton manda su tecla. Escribiendo en una celda, un clic en otra termina
+la escritura primero, como el Escape: no se pierde lo escrito por llevar la mano
+al raton.
+
 Lo que queda:
 
-- El raton: hacer clic en una celda mueve el cursor alli; en una pestana cambia
-  de hoja; en un boton ejecuta su comando. Con clic derecho se copia, y con doble
-  clic se entra a editar, como en cualquier hoja de calcula.
-- En Windows los eventos de raton llegan por la consola (`MOUSE_EVENT`) y por las
-  secuencias de la terminal; en POSIX por `SGR` (`ESC[<b;x;yM`). El editor traduce
-  los dos a un mismo evento: boton, accion, columna y fila. Hay que pedir el
-  reporte al entrar (`ESC[?1000h ESC[?1006h`) y apagarlo al salir, no sea que la
-  terminal se quede mandando clics a lo que venga detras.
-- Donde no hay raton (una tuberia, las pruebas) la barra se puede seguir usando
-  por teclado: los botones tambien tienen su tecla.
-- Los colores de la celda por boton, cuando la barra tenga su hueco: una paleta
-  de 16 numeros no cabe en una fila de botones, pero un boton que los recorra si.
+- **Seleccion de rango con el arrastre.** Pide pedir tambien los movimientos con
+  el boton apretado (`ESC[?1002h`) y un principio y un final en la hoja. Va junto
+  con la seleccion de rango por teclado, que es la pieza que desbloquea mas cosas.
+- **Los colores por boton o por tecla.** Hoy un color propio solo se pone
+  editando el `.clex`. Una paleta de 16 numeros no cabe en una fila de botones,
+  pero un boton que los recorra si: `Ctrl+G` el de delante y `Ctrl+I` el de
+  detras, volviendo al color del tema al dar la vuelta.
+- **El tiempo del doble clic** esta fijado en 500 ms (`CLICK_DOUBLE_MS`). Si algun
+  dia se quisiera configurable, seria una linea mas en el documento.
+- **Donde no hay raton** (una tuberia, las pruebas) todo sigue siendo de teclado,
+  y las pruebas mandan los clics como bytes en el archivo de teclas: asi se
+  comprueban los dos caminos en la misma prueba.
 
 ## Lo que falta alrededor
 

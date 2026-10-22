@@ -4,17 +4,41 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-// Un evento de entrada: una tecla, o un pegado de la terminal.
+// Un evento de entrada: una tecla, un pegado de la terminal, o el raton.
+// Los nombres van con CLICK y no con MOUSE porque `windows.h` ya tiene
+// INPUT_MOUSE, MOUSE_LEFT y MOUSE_RIGHT con otros numeros: con los nombres de la
+// terminal, el de en medio se calla sin decir nada y el editor deja de contestar.
 typedef enum {
     INPUT_KEY,
     INPUT_PASTE,
+    INPUT_CLICK,
 } InputKind;
+
+// Los botones del raton, con el numero que usa la terminal.
+#define CLICK_LEFT 0
+#define CLICK_MIDDLE 1
+#define CLICK_RIGHT 2
+// La rueda no es un boton: dice para donde giro.
+#define CLICK_WHEEL_UP 64
+#define CLICK_WHEEL_DOWN 65
+
+// Lo que se sabe de un suceso del raton. La columna y la fila son de la pantalla
+// y empiezan en cero, que es como se cuenta al pintar.
+typedef struct {
+    int button;
+    // Si se pulso, o si se solto.
+    bool pressed;
+    int column;
+    int row;
+} Mouse;
 
 typedef struct {
     InputKind kind;
     int key;
     // El texto del pegado. Solo vale cuando el evento es un pegado.
     const char *text;
+    // El suceso del raton. Solo vale cuando el evento es del raton.
+    Mouse mouse;
 } InputEvent;
 
 // Un caracter de la terminal, con el momento en que llego. El momento
@@ -51,6 +75,8 @@ typedef struct {
     size_t pasteCapacity;
     // El texto del ultimo pegado entregado.
     char *pasteText;
+    // El ultimo suceso del raton entregado.
+    Mouse mouse;
 } Input;
 
 void input_init(Input *input);
@@ -77,5 +103,8 @@ bool input_next(Input *input, InputEvent *event);
 
 // El texto del ultimo pegado entregado.
 const char *input_paste_text(Input *input);
+
+// El ultimo suceso del raton entregado.
+const Mouse *input_mouse(Input *input);
 
 #endif

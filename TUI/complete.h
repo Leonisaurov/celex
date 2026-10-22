@@ -1,6 +1,8 @@
 #ifndef CELEX_TUI_COMPLETE
 #define CELEX_TUI_COMPLETE
 
+#include <stddef.h>
+
 // El autocompletado: cuando se esta escribiendo una palabra, se ofrecen las
 // palabras del lenguaje y las que ya hay en la hoja.
 

@@ -140,6 +140,9 @@ static const char *pieces[] = {
     "\x1b[17;29;0;1;8;1_\x1b[69;18;69;1;8;1_\x1b[69;18;0;0;8;1_\x1b[17;29;0;0;0;1_",
     // El Ctrl+S, para guardar el documento del editor.
     "\x1b[17;29;0;1;8;1_\x1b[83;31;19;1;8;1_\x1b[83;31;19;0;8;1_\x1b[17;29;0;0;0;1_",
+    // Un clic en la celda B2. La consola lo convierte en su evento de raton, y el
+    // editor lo vuelve a traducir a la secuencia de siempre.
+    "\x1b[<0;12;6M",
     // Salir.
     "q",
 };
@@ -157,6 +160,9 @@ static const char *pieces[] = {
     "\x05",
     // El Ctrl+S, para guardar el documento del editor.
     "\x13",
+    // Un clic en la celda B2: la terminal manda la secuencia, y el editor la
+    // convierte en mover el cursor.
+    "\x1b[<0;12;6M",
     // Salir.
     "q",
 };
@@ -585,6 +591,10 @@ int main(int argc, char **argv) {
 
     check(status == 0, "el editor contesta y sale con la q");
     check(output != NULL && outputLength > 0, "el editor dibuja algo");
+
+    // El ultimo paso fue un clic en la celda B2: la barra de estado lleva el
+    // nombre de la celda del cursor, y ahi se ve si el clic llego.
+    check(output != NULL && strstr(output, "B2") != NULL, "un clic mueve el cursor en una consola de verdad");
 
     // Lo que se guardo en la hoja: la celda donde se pego.
     char *sheet = read_file(sheetPath);

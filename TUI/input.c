@@ -33,6 +33,13 @@ static const struct {
 #define SEQ_INCOMPLETE (-2)
 #define SEQ_PASTE_START (-3)
 #define SEQ_PASTE_END (-4)
+#define SEQ_MOUSE (-5)
+
+// El principio de una secuencia del raton: las terminales la mandan con el
+// formato `ESC [ < boton ; columna ; fila M`, y con `m` cuando se suelta el
+// boton.
+#define CLICK_START "\x1b[<"
+#define CLICK_START_LENGTH 3
 
 void input_init(Input *input) {
     memset(input, 0, sizeof(Input));
@@ -170,9 +177,10 @@ static size_t find_marker(const Input *input, size_t from, const char *marker, s
 }
 
 // Mira los caracteres que siguen y ve si son una secuencia conocida.
-// Devuelve el codigo de la tecla, o uno de los valores SEQ_*.
-static int match_sequence(const Input *input, size_t *consumed) {
-    char buffer[16];
+// Devuelve el codigo de la tecla, o uno de los valores SEQ_*. Cuando es el
+// raton, lo deja escrito en `mouse`.
+static int match_sequence(const Input *input, size_t *consumed, Mouse *mouse) {
+    char buffer[32];
     size_t length = 0;
 
     for (size_t i = input->pos; i < input->count && length < sizeof(buffer) - 1; i++) {
@@ -189,6 +197,53 @@ static int match_sequence(const Input *input, size_t *consumed) {
     if (length >= PASTE_MARKER_LENGTH && memcmp(buffer, PASTE_END, PASTE_MARKER_LENGTH) == 0) {
         *consumed = PASTE_MARKER_LENGTH;
         return SEQ_PASTE_END;
+    }
+
+    if (length >= CLICK_START_LENGTH && memcmp(buffer, CLICK_START, CLICK_START_LENGTH) == 0) {
+        size_t at = CLICK_START_LENGTH;
+
+        // Tres numeros separados por puntos y comas, y la letra del final.
+        int values[3] = { 0, 0, 0 };
+
+        for (int field = 0; field < 3; field++) {
+            int digits = 0;
+
+            while (at < length && buffer[at] >= '0' && buffer[at] <= '9') {
+                values[field] = values[field] * 10 + (buffer[at] - '0');
+                at++;
+                digits++;
+            }
+
+            if (digits == 0) {
+                break;
+            }
+
+            if (field < 2) {
+                if (at >= length || buffer[at] != ';') {
+                    break;
+                }
+
+                at++;
+            }
+        }
+
+        bool whole = values[0] < 1024 && at < length && (buffer[at] == 'M' || buffer[at] == 'm');
+
+        if (whole) {
+            mouse->button = values[0];
+            mouse->column = values[1] > 0 ? values[1] - 1 : 0;
+            mouse->row = values[2] > 0 ? values[2] - 1 : 0;
+            mouse->pressed = buffer[at] == 'M';
+
+            *consumed = at + 1;
+
+            return SEQ_MOUSE;
+        }
+
+        // Puede que falte parte: si van a llegar mas caracteres, se espera.
+        if (!input->noMoreBytes) {
+            return SEQ_INCOMPLETE;
+        }
     }
 
     for (size_t i = 0; i < sizeof(sequences) / sizeof(sequences[0]); i++) {
@@ -349,7 +404,8 @@ bool input_next(Input *input, InputEvent *event) {
 
         if (byte == 0x1b) {
             size_t consumed = 0;
-            int result = match_sequence(input, &consumed);
+            Mouse mouse = { 0, false, 0, 0 };
+            int result = match_sequence(input, &consumed, &mouse);
 
             if (result == SEQ_INCOMPLETE) {
                 // Falta parte de la secuencia: se espera a que llegue.
@@ -369,8 +425,20 @@ bool input_next(Input *input, InputEvent *event) {
                 return true;
             }
 
+            if (result == SEQ_MOUSE) {
+                input->mouse = mouse;
+
+                event->kind = INPUT_CLICK;
+                event->text = NULL;
+                event->key = 0;
+                event->mouse = mouse;
+
+                return true;
+            }
+
             event->kind = INPUT_KEY;
             event->text = NULL;
+            event->mouse = (Mouse) { 0, false, 0, 0 };
             event->key = result == SEQ_UNKNOWN ? KEY_ESC : result;
 
             return true;
@@ -402,4 +470,8 @@ bool input_next(Input *input, InputEvent *event) {
 
 const char *input_paste_text(Input *input) {
     return input->pasteText != NULL ? input->pasteText : "";
+}
+
+const Mouse *input_mouse(Input *input) {
+    return &input->mouse;
 }

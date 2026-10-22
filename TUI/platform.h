@@ -18,4 +18,10 @@ int platform_getkey();
 // El texto del ultimo pegado de la terminal.
 const char *platform_paste_text();
 
+// El ultimo suceso del raton, para cuando la tecla devuelta fue KEY_CLICK.
+const Mouse *platform_mouse();
+
+// Los milisegundos desde que empezo el programa.
+unsigned long long platform_time();
+
 #endif

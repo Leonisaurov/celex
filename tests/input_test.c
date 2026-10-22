@@ -57,6 +57,52 @@ int main(void) {
     check(input_next(&input, &event), "el Escape solo ya esta resuelto");
     check(event.kind == INPUT_KEY && event.key == KEY_ESC, "el Escape solo es el Escape");
 
+    // El raton, en el formato que mandan las terminales. La columna y la fila
+    // empiezan en uno al llegar, y en el editor cuentan desde cero.
+    input_push_bytes(&input, "\x1b[<0;10;5M", 10, 100);
+    check(input_next(&input, &event), "un clic da un evento");
+    check(event.kind == INPUT_CLICK, "y es del raton, no una tecla");
+    check(event.mouse.button == CLICK_LEFT && event.mouse.pressed, "el boton de la izquierda pulsado");
+    check(event.mouse.column == 9 && event.mouse.row == 4, "y donde cayo");
+
+    input_push_bytes(&input, "\x1b[<0;10;5m", 10, 100);
+    check(input_next(&input, &event), "soltar el boton da su evento");
+    check(event.kind == INPUT_CLICK && !event.mouse.pressed, "y dice que se solto");
+
+    input_push_bytes(&input, "\x1b[<2;3;3M", 9, 100);
+    check(input_next(&input, &event), "el boton derecho da su evento");
+    check(event.kind == INPUT_CLICK && event.mouse.button == CLICK_RIGHT, "y es el derecho");
+    check(event.mouse.column == 2 && event.mouse.row == 2, "con sus coordenadas");
+
+    input_push_bytes(&input, "\x1b[<65;1;1M", 10, 100);
+    check(input_next(&input, &event), "la rueda da su evento");
+    check(event.kind == INPUT_CLICK && event.mouse.button == CLICK_WHEEL_DOWN, "y dice para donde giro");
+
+    // Una coordenada de varias cifras no rompe nada.
+    input_push_bytes(&input, "\x1b[<0;123;456M", 13, 100);
+    check(input_next(&input, &event), "un numero de varias cifras se lee");
+    check(event.mouse.column == 122 && event.mouse.row == 455, "y vale lo que dice");
+
+    // Lo que esta a medias no se entrega: se espera al resto de la secuencia.
+    input_push_bytes(&input, "\x1b[<0;10", 7, 100);
+    check(!input_next(&input, &event), "un clic a medias todavia no es un evento");
+    input_push_bytes(&input, ";5M", 3, 110);
+    check(input_next(&input, &event), "y al llegar el resto, si");
+    check(event.kind == INPUT_CLICK && event.mouse.column == 9 && event.mouse.row == 4, "con lo que faltaba");
+
+    // Un escape que no resulta ser el raton no se queda esperando para siempre.
+    // Se prueba en su propia entrada, para que lo que sobre no estorbe.
+    Input odd;
+    input_init(&odd);
+
+    input_push_bytes(&odd, "\x1b[<x", 4, 100);
+    check(!input_next(&odd, &event), "un escape raruno todavia no esta resuelto");
+    input_no_more_bytes(&odd);
+    check(input_next(&odd, &event), "y se resuelve");
+    check(event.kind == INPUT_KEY && event.key == KEY_ESC, "como un Escape, que es lo que era");
+
+    input_free(&odd);
+
     // Una rafaga de caracteres que han llegado juntos es un pegado.
     input_push_bytes(&input, "hola", 4, 200);
     check(input_next(&input, &event), "la rafaga da un evento");

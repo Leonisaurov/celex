@@ -164,6 +164,45 @@ static int count_console_events(void) {
     return (int) available;
 }
 
+// Los eventos de la consola de Windows no son caracteres: las teclas se
+// traducen arriba y el raton aqui, a la secuencia que mandaria una terminal,
+// para que el editor lea una sola forma de lo mismo.
+static void push_mouse(const INPUT_RECORD *record, unsigned long long time) {
+    const MOUSE_EVENT_RECORD *mouse = &record->Event.MouseEvent;
+
+    int button = -1;
+    bool pressed = true;
+
+    if ((mouse->dwEventFlags & MOUSE_WHEELED) != 0) {
+        // La rueda no tiene boton propio: sube con el numero arriba del todo.
+        short turned = (short) LOWORD(mouse->dwButtonState);
+
+        button = turned > 0 ? CLICK_WHEEL_UP : CLICK_WHEEL_DOWN;
+    } else if ((mouse->dwEventFlags & MOUSE_MOVED) != 0) {
+        // Moverse sin apretar nada no es una orden: se ignora, como en las
+        // terminales que no piden los arrastres.
+        return;
+    } else if ((mouse->dwButtonState & FROM_LEFT_1ST_BUTTON_PRESSED) != 0) {
+        button = CLICK_LEFT;
+    } else if ((mouse->dwButtonState & RIGHTMOST_BUTTON_PRESSED) != 0) {
+        button = CLICK_RIGHT;
+    } else if ((mouse->dwButtonState & FROM_LEFT_2ND_BUTTON_PRESSED) != 0) {
+        button = CLICK_MIDDLE;
+    } else {
+        button = CLICK_LEFT;
+        pressed = false;
+    }
+
+    char sequence[32];
+    snprintf(sequence, sizeof(sequence), "\x1b[<%d;%d;%d%c",
+             button,
+             mouse->dwMousePosition.X + 1,
+             mouse->dwMousePosition.Y + 1,
+             pressed ? 'M' : 'm');
+
+    input_push_bytes(&console_input, sequence, strlen(sequence), time);
+}
+
 // Lee los eventos que hay en la consola, sin esperar.
 static int read_console_events(void) {
     int available = count_console_events();
@@ -190,15 +229,18 @@ static int read_console_events(void) {
     unsigned long long time = event_time();
 
     for (DWORD i = 0; i < read; i++) {
-        if (records[i].EventType != KEY_EVENT) {
+        if (records[i].EventType == KEY_EVENT) {
+            if (!records[i].Event.KeyEvent.bKeyDown) {
+                continue;
+            }
+
+            push_key(&records[i], time);
             continue;
         }
 
-        if (!records[i].Event.KeyEvent.bKeyDown) {
-            continue;
+        if (records[i].EventType == MOUSE_EVENT) {
+            push_mouse(&records[i], time);
         }
-
-        push_key(&records[i], time);
     }
 
     return (int) read;
@@ -238,17 +280,24 @@ void platform_open_screen() {
 
     HANDLE input = std_input();
 
-    // Las teclas llegan de en una y sin eco, como en el modo raw de POSIX.
+    // Las teclas llegan de en una y sin eco, como en el modo raw de POSIX. El
+    // raton tambien: sin pedir sus eventos la consola no los da, y un clic se
+    // queda en nada.
     if (input != INVALID_HANDLE_VALUE && GetConsoleMode(input, &input_mode)) {
         DWORD mode = input_mode;
 
         mode &= ~(DWORD) (ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT);
-        mode |= ENABLE_EXTENDED_FLAGS;
+        mode |= ENABLE_EXTENDED_FLAGS | ENABLE_MOUSE_INPUT;
         mode &= ~ENABLE_QUICK_EDIT_MODE;
 
         SetConsoleMode(input, mode);
         input_is_console = 1;
     }
+
+    // Para que la terminal de verdad (Windows Terminal, una consola con VT)
+    // mande los clics y las coordenadas en el formato de siempre.
+    fputs("\x1b[?1000h\x1b[?1006h", stdout);
+    fflush(stdout);
 
     input_init(&console_input);
     // Solo en una consola de verdad se puede saber si los caracteres llegaron
@@ -257,6 +306,11 @@ void platform_open_screen() {
 }
 
 void platform_close_screen() {
+    // Se apaga el reporte del raton: lo que venga detras no tiene por que
+    // recibir clics.
+    fputs("\x1b[?1000l\x1b[?1006l", stdout);
+    fflush(stdout);
+
     if (input_is_console) {
         SetConsoleMode(std_input(), input_mode);
         input_is_console = 0;
@@ -312,6 +366,10 @@ int platform_getkey() {
         if (input_next(&console_input, &event)) {
             if (event.kind == INPUT_PASTE) {
                 return KEY_PASTE;
+            }
+
+            if (event.kind == INPUT_CLICK) {
+                return KEY_CLICK;
             }
 
             return event.key;
@@ -378,6 +436,14 @@ const char *platform_paste_text(void) {
     return input_paste_text(&console_input);
 }
 
+const Mouse *platform_mouse(void) {
+    return input_mouse(&console_input);
+}
+
+unsigned long long platform_time(void) {
+    return (unsigned long long) GetTickCount64();
+}
+
 #else
 
 #include <stdint.h>
@@ -435,6 +501,11 @@ void platform_open_screen() {
 
     tcsetattr(STDIN_FILENO, TCSANOW, &raw_term);
 
+    // Los clics, en el formato de siempre: el 1000 pide los botones y el 1006
+    // las coordenadas.
+    fputs("\x1b[?1000h\x1b[?1006h", stdout);
+    fflush(stdout);
+
     input_init(&terminal_input);
     // Solo en una terminal de verdad se puede saber si los caracteres
     // llegaron de golpe (un pegado) o de uno en uno (al teclear).
@@ -442,6 +513,9 @@ void platform_open_screen() {
 }
 
 void platform_close_screen() {
+    fputs("\x1b[?1000l\x1b[?1006l", stdout);
+    fflush(stdout);
+
     tcsetattr(STDIN_FILENO, TCSANOW, &term);
 
     input_free(&terminal_input);
@@ -473,6 +547,10 @@ int platform_getkey() {
         if (input_next(&terminal_input, &event)) {
             if (event.kind == INPUT_PASTE) {
                 return KEY_PASTE;
+            }
+
+            if (event.kind == INPUT_CLICK) {
+                return KEY_CLICK;
             }
 
             return event.key;
@@ -512,6 +590,14 @@ int platform_getkey() {
 
 const char *platform_paste_text(void) {
     return input_paste_text(&terminal_input);
+}
+
+const Mouse *platform_mouse(void) {
+    return input_mouse(&terminal_input);
+}
+
+unsigned long long platform_time(void) {
+    return now_ms();
 }
 
 #endif

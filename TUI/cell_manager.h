@@ -101,7 +101,7 @@ typedef struct {
 // empieza lo demas.
 int grid_bottom(const CellManager *manager, int height);
 int tools_row(const CellManager *manager, int height);
-int sheet_row(const CellManager *manager, int height);
+int sheet_row(int height);
 
 // La hoja que se esta viendo, y su estado. Todo lo que es de una hoja se mira
 // aqui: las celdas, el cursor, la vista y el historial.
@@ -158,6 +158,13 @@ void print_sheets(CellManager *manager);
 
 // La fila de las herramientas, encima de las pestañas.
 void print_tools(CellManager *manager);
+
+// Donde cae un punto de la pantalla, para poder llevar un clic al sitio que le
+// corresponde. `sheet_at_column` devuelve la hoja de la columna de la fila de las
+// pestanas, o -1 si no es de ninguna. `cell_at_screen` dice si la columna y la
+// fila caen dentro de una celda de la rejilla, y cual es.
+int sheet_at_column(CellManager *manager, int x);
+int cell_at_screen(CellManager *manager, int x, int y, unsigned int *cellX, unsigned int *cellY);
 
 // Que pestañas caben en una fila de `width` columnas, con `sizes` como lo que
 // pesa el nombre de cada una de las `count` hojas y `active` como la que se esta

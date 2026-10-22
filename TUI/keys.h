@@ -37,7 +37,18 @@ typedef struct {
     bool quitting;
     // Que se pidio recargar y falta la confirmacion.
     bool reloading;
+    // El ultimo clic de la izquierda: cuando, y en que celda. Dos clics seguidos
+    // en la misma celda son un doble clic, que es como se entra a editar.
+    unsigned long long clickTime;
+    unsigned int clickX;
+    unsigned int clickY;
+    // Si el ultimo clic ya fue el segundo de un doble.
+    bool clickedTwice;
 } Editor;
+
+// Cuanto tiene que pasar entre dos clics en la misma celda para que sean un doble
+// clic, en milisegundos. Es el tiempo de siempre de las ventanas.
+#define CLICK_DOUBLE_MS 500
 
 // Vuelve a calcular la hoja, para que los valores correspondan con el
 // contenido de las celdas. Devuelve true si dejo un mensaje en la barra.
@@ -45,6 +56,10 @@ bool recalculate_sheet(CellManager *manager);
 
 // Maneja una tecla. Devuelve false si el editor debe terminar.
 bool handle_key(Editor *editor, CellManager *manager, int key);
+
+// Maneja un suceso del raton: un clic en una celda mueve el cursor, en una
+// pestana cambia de hoja y en un boton manda su tecla.
+bool handle_mouse(Editor *editor, CellManager *manager, const Mouse *mouse);
 
 // Aplica un pegado: el texto entra en la celda, o en el texto que se esta
 // editando.

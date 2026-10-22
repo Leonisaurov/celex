@@ -6,6 +6,7 @@
 #include "ref.h"
 #include "script.h"
 #include "theme.h"
+#include "tools.h"
 #include "tui.h"
 
 #include <stdbool.h>
@@ -129,7 +130,105 @@ static void copy(CellManager *manager) {
     set_message(manager, message);
 }
 
+bool handle_mouse(Editor *editor, CellManager *manager, const Mouse *mouse) {
+    int width = manager->size.x < 20 ? 20 : manager->size.x;
+    int height = manager->size.y < 6 ? 6 : manager->size.y;
+
+    // Solo manda el pulsar. Soltar el boton, o mover el raton sin apretar, no es
+    // ninguna orden.
+    if (!mouse->pressed) {
+        return editor->running;
+    }
+
+    if (mouse->button == CLICK_WHEEL_UP || mouse->button == CLICK_WHEEL_DOWN) {
+        // La rueda recorre el cursor por las filas, como las flechas.
+        return handle_key(editor, manager, mouse->button == CLICK_WHEEL_UP ? KEY_UP : KEY_DOWN);
+    }
+
+    // Un clic corta la escritura del nombre de la hoja, como hace una tecla de
+    // mando, y hace lo que toca despues.
+    if (manager->renaming) {
+        manager->renaming = false;
+        manager->renameText[0] = '\0';
+    }
+
+    if (manager->showTools && mouse->row == tools_row(manager, height)) {
+        int tool = tool_at_column(width, mouse->column);
+
+        if (tool < 0) {
+            return editor->running;
+        }
+
+        // El boton es su tecla: se manda la tecla, y lo que hace es lo que hace
+        // la mano.
+        return handle_key(editor, manager, tool_at(tool).key);
+    }
+
+    if (mouse->row == sheet_row(height)) {
+        int sheet = sheet_at_column(manager, mouse->column);
+
+        if (sheet < 0 || sheet == manager->active) {
+            return editor->running;
+        }
+
+        sheet_select(manager, sheet);
+        set_message(manager, sheet_name_at(manager, sheet));
+
+        return editor->running;
+    }
+
+    unsigned int x = 0;
+    unsigned int y = 0;
+
+    if (!cell_at_screen(manager, mouse->column, mouse->row, &x, &y)) {
+        return editor->running;
+    }
+
+    if (sheet_state(manager)->editing) {
+        // Se estaba escribiendo una celda: el clic en otra la deja como si se
+        // hubiera pulsado Escape, y hace lo que toca despues.
+        handle_key(editor, manager, KEY_ESC);
+    }
+
+    if (mouse->button == CLICK_RIGHT) {
+        // El clic derecho copia la celda, que es lo que se quiere hacer ahi.
+        sheet_state(manager)->cursor.x = (uint16_t) x;
+        sheet_state(manager)->cursor.y = (uint16_t) y;
+
+        return handle_key(editor, manager, KEY_CTRL_C);
+    }
+
+    if (mouse->button != CLICK_LEFT) {
+        return editor->running;
+    }
+
+    unsigned long long now = get_time_ms();
+
+    // Dos clics encima de la misma celda, uno detras de otro, son un doble clic.
+    bool twice = x == editor->clickX && y == editor->clickY && now - editor->clickTime <= CLICK_DOUBLE_MS;
+
+    editor->clickTime = now;
+    editor->clickX = x;
+    editor->clickY = y;
+
+    sheet_state(manager)->cursor.x = (uint16_t) x;
+    sheet_state(manager)->cursor.y = (uint16_t) y;
+
+    if (!twice || sheet_state(manager)->editing) {
+        return editor->running;
+    }
+
+    // Como en cualquier hoja de calculo: al doble clic se entra a editar lo que
+    // tiene la celda.
+    return handle_key(editor, manager, 'i');
+}
+
 bool handle_key(Editor *editor, CellManager *manager, int key) {
+    if (key == KEY_CLICK) {
+        // El raton llega como una tecla mas, y lo que ha hecho se mira aparte.
+        return handle_mouse(editor, manager, get_mouse());
+    }
+
     // Cualquier otra tecla cancela la confirmacion de salida.
     if (key != 'q') {
         editor->quitting = false;

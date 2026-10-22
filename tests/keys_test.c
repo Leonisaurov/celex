@@ -448,6 +448,147 @@ int main(void) {
 
     free_cell_manager(&tooled);
 
+    // El raton. La pantalla de pruebas es de 80x24 y la celda de 4x2, asi que la
+    // rejilla acaba en la fila 21, las herramientas son la 21 y las pestanas la 22.
+    set_cell_size(4, 2);
+
+    CellManager clicked = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    Editor clickedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+
+    set_cell_content(&clicked, 2, 2, "= 7");
+    set_cell_content(&clicked, 0, 0, "1");
+
+    Mouse click = { CLICK_LEFT, true, 16, 8 };
+
+    handle_mouse(&clickedEditor, &clicked, &click);
+    check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 2,
+          "un clic en una celda pone el cursor ahi");
+    check(!sheet_state(&clicked)->editing, "y un clic suelto no entra a editar");
+
+    // Soltar el boton no hace nada, y caiga donde caiga.
+    click.row = 2;
+    click.column = 6;
+    click.pressed = false;
+    handle_mouse(&clickedEditor, &clicked, &click);
+    check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 2,
+          "soltar el boton no mueve el cursor");
+
+    click.pressed = true;
+
+    // La raya de la rejilla no es una celda, ni la de en medio ni la de abajo.
+    click.column = 15;
+    click.row = 2;
+    handle_mouse(&clickedEditor, &clicked, &click);
+    check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 2,
+          "un clic en la raya vertical no hace nada");
+
+    click.column = 16;
+    click.row = 4;
+    handle_mouse(&clickedEditor, &clicked, &click);
+    check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 2,
+          "un clic en la raya horizontal no hace nada");
+
+    // La cabecera de las letras tampoco.
+    click.column = 11;
+    click.row = 0;
+    handle_mouse(&clickedEditor, &clicked, &click);
+    check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 2,
+          "un clic en las letras de arriba no hace nada");
+
+    // El doble clic entra a editar la celda. La primera vez que se clica encima
+    // no: la memoria del clic anterior era de otra celda.
+    click.column = 16;
+    click.row = 11;
+    handle_mouse(&clickedEditor, &clicked, &click);
+    check(!sheet_state(&clicked)->editing, "el primero se queda en mover el cursor");
+    check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 3,
+          "y lleva el cursor a la celda nueva");
+
+    handle_mouse(&clickedEditor, &clicked, &click);
+    check(sheet_state(&clicked)->editing, "y el segundo, encima de la misma celda, entra a editarla");
+
+    handle_key(&clickedEditor, &clicked, KEY_ESC);
+
+    // El clic derecho copia la celda.
+    Mouse right = { CLICK_RIGHT, true, 6, 2 };
+
+    handle_mouse(&clickedEditor, &clicked, &right);
+    check(sheet_state(&clicked)->cursor.x == 0 && sheet_state(&clicked)->cursor.y == 0,
+          "el clic derecho pone el cursor en la celda");
+    check_message(&clicked, "copied A1", "y copia lo que hay");
+
+    // La rueda pasa de fila en fila, como las flechas.
+    Mouse wheel = { CLICK_WHEEL_DOWN, true, 16, 8 };
+
+    handle_mouse(&clickedEditor, &clicked, &wheel);
+    check(sheet_state(&clicked)->cursor.y == 1, "la rueda hacia abajo baja una fila");
+
+    wheel.button = CLICK_WHEEL_UP;
+    handle_mouse(&clickedEditor, &clicked, &wheel);
+    handle_mouse(&clickedEditor, &clicked, &wheel);
+    check(sheet_state(&clicked)->cursor.y == 0, "y hacia arriba sube");
+
+    // Un boton es su tecla.
+    int starts[TOOL_LIMIT];
+
+    tools_fit(80, starts);
+
+    Mouse onTool = { CLICK_LEFT, true, starts[0] + 1, tools_row(&clicked, 24) };
+
+    handle_mouse(&clickedEditor, &clicked, &onTool);
+    check(cell_format(get_cell(&clicked, 0, 0)).bold == 1, "el clic en el boton de negrita pone la negrita");
+
+    handle_key(&clickedEditor, &clicked, KEY_CTRL_B);
+
+    // Y el clic en una pestana cambia de hoja. La segunda pestana empieza despues
+    // de la primera, que mide seis, y detras de la raya.
+    check(sheet_add(&clicked, "gastos") > 0, "el gestor de pruebas tiene una segunda hoja");
+    check(strcmp(sheet_name_at(&clicked, 1), "gastos") == 0, "con su nombre");
+
+    sheet_select(&clicked, 0);
+
+    // La raya entre las dos pestanas no es de ninguna.
+    Mouse onRaya = { CLICK_LEFT, true, 6, sheet_row(24) };
+
+    handle_mouse(&clickedEditor, &clicked, &onRaya);
+    check(sheet_active(&clicked) == 0, "la raya entre pestanas no cambia de hoja");
+
+    Mouse onTab = { CLICK_LEFT, true, 7, sheet_row(24) };
+
+    handle_mouse(&clickedEditor, &clicked, &onTab);
+    check(sheet_active(&clicked) == 1, "el clic en la pestana pasa a la otra hoja");
+
+    sheet_select(&clicked, 0);
+
+    // Escribiendo en una celda, un clic en otra la deja escrita y lleva el cursor
+    // a la nueva, como en cualquier hoja de calculo.
+    sheet_state(&clicked)->cursor.x = 1;
+    sheet_state(&clicked)->cursor.y = 1;
+    handle_key(&clickedEditor, &clicked, 'i');
+    handle_key(&clickedEditor, &clicked, '5');
+    handle_key(&clickedEditor, &clicked, '5');
+
+    Mouse elsewhere = { CLICK_LEFT, true, 16, 14 };
+
+    handle_mouse(&clickedEditor, &clicked, &elsewhere);
+    check(!sheet_state(&clicked)->editing, "el clic en otra celda termina la escritura");
+    check_content(&clicked, 1, 1, "55", "y lo escrito se queda en su celda");
+    check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 4,
+          "y el cursor pasa a la celda clicada");
+
+    // Escondidas las herramientas, esa fila es de la rejilla.
+    handle_key(&clickedEditor, &clicked, KEY_CTRL_K);
+    sheet_select(&clicked, 0);
+
+    Mouse onGrid = { CLICK_LEFT, true, 16, 21 };
+
+    handle_mouse(&clickedEditor, &clicked, &onGrid);
+    check(sheet_state(&clicked)->cursor.y == 6,
+          "sin la fila de las herramientas, ahi abajo tambien hay celdas");
+
+    free_cell_manager(&clicked);
+    set_cell_size(4, 2);
+
     // El autocompletado: el tabulador escribe la palabra del lenguaje que falta,
     // la palabra de la hoja cuando no hay mas que una, y va pasando por las
     // candidatas cuando hay varias que empiezan igual.

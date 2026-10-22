@@ -65,3 +65,11 @@ int getkey() {
 const char *get_paste_text() {
     return platform_paste_text();
 }
+
+const Mouse *get_mouse() {
+    return platform_mouse();
+}
+
+unsigned long long get_time_ms() {
+    return platform_time();
+}

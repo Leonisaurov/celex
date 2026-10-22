@@ -1,6 +1,7 @@
 #ifndef CELEX_TUI_TUI
 #define CELEX_TUI_TUI
 #include "config.h"
+#include "input.h"
 #include <stdint.h>
 
 #define KEY_ESC 27
@@ -17,6 +18,9 @@
 
 // La terminal ha pegado un texto. El texto se pide con get_paste_text().
 #define KEY_PASTE 300
+
+// La terminal ha movido el raton. Lo que ha hecho se pide con get_mouse().
+#define KEY_CLICK 301
 
 typedef struct {
     uint16_t x;
@@ -39,5 +43,12 @@ int getkey();
 // El texto del ultimo pegado de la terminal. Solo vale cuando la tecla
 // devuelta fue KEY_PASTE.
 const char *get_paste_text();
+
+// Lo que ha hecho el raton. Solo vale cuando la tecla devuelta fue KEY_CLICK.
+const Mouse *get_mouse();
+
+// Los milisegundos desde que empezo el programa, para saber si dos clics son el
+// mismo golpe.
+unsigned long long get_time_ms();
 
 #endif
