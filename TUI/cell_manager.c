@@ -37,6 +37,11 @@ static void free_previous(void);
 #define BOX_BD "\xE2\x94\xB4"
 #define BOX_CR "\xE2\x94\xBC"
 
+// La celda copiada se marca con un borde punteado, como las hormigas
+// marchantes de las hojas de calculo, para saber que celda se copio.
+#define BOX_DASH_H "\xE2\x94\x84"
+#define BOX_DASH_V "\xE2\x94\x86"
+
 // Bytes del caracter UTF-8 que empieza en text.
 static size_t utf8_size(const char *text) {
     unsigned char first = (unsigned char) text[0];
@@ -413,50 +418,27 @@ bool can_redo(CellManager *manager) {
     return manager->redo.count > 0;
 }
 
-// El portapapeles del editor. Es propio, para que funcione igual en los dos
-// sistemas. Guarda el contenido de la celda (su formula) y su valor (el
-// resultado de evaluarla), porque al pegar dentro de una celda lo que se
-// quiere es el resultado.
-static char* clipboard = NULL;
-static char* clipboard_value = NULL;
-
-static void clipboard_set(const char* text, const char* value) {
-    char* copy = duplicate_text(text);
-    char* copy_value = duplicate_text(value);
-
-    if (copy == NULL) {
-        free(copy_value);
-        return;
-    }
-
-    free(clipboard);
-    free(clipboard_value);
-
-    clipboard = copy;
-    clipboard_value = copy_value;
-}
-
+// El portapapeles del editor vive en el gestor de celdas, para que el editor
+// y las pruebas usen siempre el mismo. Guarda el contenido de la celda (su
+// formula) y su valor (el resultado de evaluarla), y tambien de que celda
+// viene, para poder marcarla.
 void copy_cell_content(CellManager *manager, unsigned int x, unsigned int y) {
     MetaCell* meta = get_cell(manager, x, y);
 
-    clipboard_set(cell_content(meta), cell_value(meta));
+    clipboard_set_cell(&manager->clipboard, cell_content(meta), cell_value(meta), x, y);
 }
 
-bool has_clipboard(void) {
-    return clipboard != NULL;
-}
-
-void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y) {
-    if (clipboard == NULL) {
+void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *text) {
+    if (text == NULL) {
         return;
     }
 
     // En una celda se pega la formula entera.
-    edit_cell_content(manager, x, y, clipboard);
+    edit_cell_content(manager, x, y, text);
 }
 
-void paste_cell_text(CellManager *manager, unsigned int x, unsigned int y) {
-    if (clipboard == NULL) {
+void paste_cell_text(CellManager *manager, unsigned int x, unsigned int y, const char *text) {
+    if (text == NULL) {
         return;
     }
 
@@ -464,10 +446,6 @@ void paste_cell_text(CellManager *manager, unsigned int x, unsigned int y) {
     if (meta == NULL) {
         return;
     }
-
-    // Dentro de una celda se pega el resultado, que es lo que se quiere
-    // escribir. Si la celda copiada no tenia valor, se pega su formula.
-    const char* text = clipboard_value != NULL && clipboard_value[0] != '\0' ? clipboard_value : clipboard;
 
     char* old = duplicate_text(cell_content(meta));
 
@@ -519,6 +497,7 @@ CellManager new_cell_manager(TermSize size) {
     manager.redo.items = NULL;
     manager.redo.count = 0;
     manager.redo.capacity = 0;
+    clipboard_init(&manager.clipboard);
 
     if (0 != hashmap_create(35, &manager.map)) {
         // TODO! Error Handeling
@@ -546,15 +525,7 @@ void free_cell_manager(CellManager *manager) {
     history_clear(&manager->undo);
     history_clear(&manager->redo);
 
-    if (clipboard != NULL) {
-        free(clipboard);
-        clipboard = NULL;
-    }
-
-    if (clipboard_value != NULL) {
-        free(clipboard_value);
-        clipboard_value = NULL;
-    }
+    clipboard_free(&manager->clipboard);
 
     free_previous();
 }
@@ -791,6 +762,41 @@ static void free_previous(void) {
     previous_ready = false;
 }
 
+// Dibuja el borde punteado de la celda copiada, si se ve en la pantalla.
+static void draw_copied_cell(CellManager *manager, char *buffer, int width, int columns, int rows) {
+    if (!clipboard_has_cell(&manager->clipboard)) {
+        return;
+    }
+
+    unsigned int cellX = 0;
+    unsigned int cellY = 0;
+    clipboard_cell(&manager->clipboard, &cellX, &cellY);
+
+    int column = (int) cellX - (int) manager->camera.x;
+    int row = (int) cellY - (int) manager->camera.y;
+
+    if (column < 0 || column >= columns || row < 0 || row >= rows) {
+        return;
+    }
+
+    int left = HEADER_WIDTH + column * STRIDE_X;
+    int top = HEADER_HEIGHT + row * STRIDE_Y;
+    int right = left + CELL_SIZE_X;
+    int bottom = top + CELL_SIZE_Y;
+
+    // Los lados de arriba y de abajo.
+    for (int x = left; x <= right; x++) {
+        put_box(buffer, width, x, top, BOX_DASH_H);
+        put_box(buffer, width, x, bottom, BOX_DASH_H);
+    }
+
+    // Los lados de la izquierda y de la derecha.
+    for (int y = top + 1; y < bottom; y++) {
+        put_box(buffer, width, left, y, BOX_DASH_V);
+        put_box(buffer, width, right, y, BOX_DASH_V);
+    }
+}
+
 void print_cell_manager(CellManager *manager) {
     int width = manager->size.x < 20 ? 20 : manager->size.x;
     int height = manager->size.y < 6 ? 6 : manager->size.y;
@@ -857,6 +863,9 @@ void print_cell_manager(CellManager *manager) {
             put_box(buffer, width, x, y, corner);
         }
     }
+
+    // La celda copiada queda con un borde punteado, para saber cual es.
+    draw_copied_cell(manager, buffer, width, columns, rows);
 
     for (int column = 0; column < columns; column++) {
         char *name = ref_column_name((unsigned int) (manager->camera.x + column));
@@ -1120,6 +1129,22 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     append_text(status, sizeof(status), "  ");
     // Si se ven los valores o el fuente de las celdas.
     append_padded(status, sizeof(status), manager->showValues ? "VAL" : "SRC", 3);
+    append_text(status, sizeof(status), "  ");
+    // La celda copiada, para saber que hay en el portapapeles.
+    char copied[16];
+    copied[0] = '\0';
+
+    if (clipboard_has_cell(&manager->clipboard)) {
+        unsigned int cellX = 0;
+        unsigned int cellY = 0;
+        clipboard_cell(&manager->clipboard, &cellX, &cellY);
+
+        char *copiedRef = ref_to_string(cellX, cellY);
+        snprintf(copied, sizeof(copied), "CP %s", copiedRef);
+        free(copiedRef);
+    }
+
+    append_padded(status, sizeof(status), copied, 8);
     append_text(status, sizeof(status), "  ");
     append_padded(status, sizeof(status), content, 16);
     append_text(status, sizeof(status), "  ");

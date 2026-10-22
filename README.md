@@ -96,11 +96,19 @@ of cases is in `tests/cases.txt`.
 
 The runner is written in C, so the same tests run on both systems.
 
-There are two suites: `tests/runner.c` runs the interpreter over the cases
-of `tests/cases` and compares what it prints with `tests/expected`, and
+There are four suites: `tests/runner.c` runs the interpreter over the cases
+of `tests/cases` and compares what it prints with `tests/expected`;
 `tests/editor_test.c` checks the editing of the cells — writing in an empty
 cell, inserting in the middle, deleting, undoing — without needing a
-terminal.
+terminal; `tests/keys_test.c` presses the keys the same way the program
+does, to check that copying a cell and pasting it works, that the copied
+cell is marked and that the text of a cell being edited is copied as text;
+and `tests/input_test.c` checks that what the terminal sends is understood as
+keys or as pastes.
+
+`tests/app_test.c` runs the editor itself, with the keys written in a file,
+and checks the sheet that it saves and what it draws in the screen. That is
+the test that says if the editor works as it should, from the outside.
 
 The language has some debug code that prints the symbols, the chunks and
 the tokens. It is not compiled in a normal build, and it is turned on
@@ -132,8 +140,8 @@ build.bat debug        # on Windows
 | `Ctrl+S`           | save the sheet into the opened file       |
 | `Ctrl+Z`           | undo the last change                      |
 | `Ctrl+Y`           | redo the change that was undone           |
-| `Ctrl+C`           | copy the content of the cell              |
-| `Ctrl+V`           | paste the content into the cell           |
+| `Ctrl+C`           | copy the cell, or the text being edited    |
+| `Ctrl+V`           | paste into the cell, or into the text      |
 | `Ctrl+L`           | reload the file                           |
 | `q`                | quit                                      |
 
@@ -147,10 +155,28 @@ always match the content of the cells. While a cell is being edited, that
 cell shows its source, since that is what is being written; the rest of the
 cells keep showing their values.
 
-`Ctrl+C` copies the cell under the cursor, and `Ctrl+V` pastes it into the
-cell under the cursor, replacing its content. The copied cell keeps both its
-formula and its result: pasted into a cell, the formula goes in; pasted while
-a cell is being edited, the result goes in where the text cursor is.
+`Ctrl+C` copies the cell under the cursor and `Ctrl+V` pastes it into the
+cell under the cursor, replacing its content. What is copied is the formula
+of the cell, and the sheet is calculated again after the paste, so the new
+formula has its value right away.
+
+The copied cell is marked with a dashed border, like the marching ants of
+Excel, and the status bar says which cell is in the clipboard (`CP A1`). The
+mark stays until something else is copied.
+
+The clipboard is the one of the editor, so the `Ctrl+C` and the `Ctrl+V`
+always work with the same thing, no matter what the terminal does with
+those keys. While a cell is being edited, the `Ctrl+C` and the `Ctrl+V` work
+with the text, like in any text editor: the `Ctrl+C` copies the text of the
+cell and the `Ctrl+V` puts it where the text cursor is.
+
+Some terminals use the `Ctrl+V` for themselves: the Windows Terminal, for
+example, pastes the clipboard of the system. To make that work, the editor
+also puts what it copies in the clipboard of the system, and it asks the
+terminal to mark the pastes (`ESC[?2004h`), so a text that the terminal
+pastes is known to be a paste and not a text that was typed. A paste from
+the terminal is put in the clipboard of the editor too, so the two always
+agree.
 
 When the values are being shown, the cell under the cursor always shows its
 source instead of its value, so the formula of that cell is always visible.
@@ -159,9 +185,12 @@ The status bar starts with the number of the build, so it is always clear
 which binary is being used. It is the commit of the repository, with a `+`
 when there are changes that were not committed.
 
-The clipboard is the one of the editor, so it works the same on every
-system. If the sheet has changes that were not saved, `q` asks for a
-confirmation before leaving.
+If the terminal has some text selected, the `Ctrl+C` copies that selection
+instead of reaching the editor. The `Ctrl+V` of the terminal always works:
+the editor has the copied cell in the clipboard of the system.
+
+If the sheet has changes that were not saved, `q` asks for a confirmation
+before leaving.
 
 The file is read when the editor starts. `Ctrl+L` reads it again, which is
 useful when it changes from the outside. If there are changes that were not

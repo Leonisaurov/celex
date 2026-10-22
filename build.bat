@@ -71,7 +71,7 @@ set "CFLAGS=/nologo /std:c11 /W3 /utf-8 /D_CRT_SECURE_NO_WARNINGS /ICommon /IShe
 rem El editor: TUI, la hoja y el lenguaje (sin el interprete).
 echo Compilando el editor...
 for /l %%i in (1,1,4) do (
-    cl %CFLAGS% /Fobuild\obj\ /Febuild\celex.exe TUI\*.c Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c
+    cl %CFLAGS% /Fobuild\obj\ /Febuild\celex.exe TUI\*.c Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c /link user32.lib
     if not errorlevel 1 goto :editor_listo
     echo Reintentando en dos segundos...
     ping -n 3 127.0.0.1 >nul
@@ -116,7 +116,7 @@ for %%f in (TUI\*.c) do (
 
 echo Compilando las pruebas de edicion...
 for /l %%i in (1,1,4) do (
-    cl %CFLAGS% /ITUI /Fobuild\obj\ /Febuild\editor_test.exe tests\editor_test.c !TUI_SOURCES! Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c
+    cl %CFLAGS% /ITUI /Fobuild\obj\ /Febuild\editor_test.exe tests\editor_test.c !TUI_SOURCES! Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c /link user32.lib
     if not errorlevel 1 goto :editor_listo
     echo Reintentando en dos segundos...
     ping -n 3 127.0.0.1 >nul
@@ -124,11 +124,55 @@ for /l %%i in (1,1,4) do (
 goto :error
 :editor_listo
 
+rem Las pruebas de las teclas: manejan las teclas como el programa de verdad.
+echo Compilando las pruebas de las teclas...
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /ITUI /Fobuild\obj\ /Febuild\keys_test.exe tests\keys_test.c !TUI_SOURCES! Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c /link user32.lib
+    if not errorlevel 1 goto :teclas_listas
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:teclas_listas
+
+rem Las pruebas de la entrada: convierten lo que llega de la terminal en
+rem teclas y en pegados.
+echo Compilando las pruebas de la entrada...
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /ITUI /Fobuild\obj\ /Febuild\input_test.exe tests\input_test.c !TUI_SOURCES! Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c /link user32.lib
+    if not errorlevel 1 goto :entrada_lista
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:entrada_lista
+
+rem Las pruebas del editor entero: corren el programa con las teclas escritas
+rem en un archivo.
+echo Compilando las pruebas del editor...
+for /l %%i in (1,1,4) do (
+    cl %CFLAGS% /Fobuild\obj\ /Febuild\app_test.exe tests\app_test.c /link user32.lib
+    if not errorlevel 1 goto :app_listo
+    echo Reintentando en dos segundos...
+    ping -n 3 127.0.0.1 >nul
+)
+goto :error
+:app_listo
+
 echo Listo: build\celex.exe y build\celexs.exe
 build\runner.exe build\celexs.exe tests
 if errorlevel 1 goto :fallo
 
 build\editor_test.exe
+if errorlevel 1 goto :fallo
+
+build\keys_test.exe
+if errorlevel 1 goto :fallo
+
+build\input_test.exe
+if errorlevel 1 goto :fallo
+
+build\app_test.exe build\celex.exe
 if errorlevel 1 goto :fallo
 
 popd

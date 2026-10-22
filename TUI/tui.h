@@ -15,6 +15,9 @@
 #define KEY_END 261
 #define KEY_DELETE 262
 
+// La terminal ha pegado un texto. El texto se pide con get_paste_text().
+#define KEY_PASTE 300
+
 typedef struct {
     uint16_t x;
     uint16_t y;
@@ -32,5 +35,9 @@ void close_screen();
 void print(char* p1, ...);
 
 int getkey();
+
+// El texto del ultimo pegado de la terminal. Solo vale cuando la tecla
+// devuelta fue KEY_PASTE.
+const char *get_paste_text();
 
 #endif

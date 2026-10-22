@@ -1,39 +1,13 @@
 #include "cell_manager.h"
 #include "file.h"
-#include "ref.h"
-#include "script.h"
+#include "keys.h"
 #include "tui.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#define KEY_CTRL_S 19
-#define KEY_CTRL_R 18
-#define KEY_CTRL_Y 25
-#define KEY_CTRL_Z 26
-#define KEY_CTRL_C 3
-#define KEY_CTRL_V 22
-#define KEY_CTRL_L 12
-
-// Vuelve a calcular la hoja, para que los valores correspondan con el
-// contenido de las celdas. Solo avisa si alguna celda no se pudo calcular:
-// devuelve si dejo un mensaje en la barra.
-static bool recalculate(CellManager *manager) {
-    char message[MESSAGE_SIZE];
-
-    message[0] = '\0';
-
-    if (run_script(manager, message, MESSAGE_SIZE) == SCRIPT_OK && message[0] == '\0') {
-        // Todo se pudo calcular: no hay nada que avisar.
-        return false;
-    }
-
-    set_message(manager, message);
-
-    return true;
-}
 
 int main(int argc, char **argv) {
     if (argc < 2) {
@@ -60,13 +34,16 @@ int main(int argc, char **argv) {
         }
     }
 
+    Editor editor = {
+        .path = path,
+        .running = true,
+        .quitting = false,
+        .reloading = false,
+    };
+
     open_screen();
 
-    bool running = true;
-    bool quitting = false;
-    bool reloading = false;
-
-    while (running) {
+    while (editor.running) {
         TermSize current = getTerminalSize();
         if (current.x != manager.size.x || current.y != manager.size.y) {
             manager.size = current;
@@ -80,215 +57,7 @@ int main(int argc, char **argv) {
             break;
         }
 
-        // Cualquier otra tecla cancela la confirmacion de salida.
-        if (key != 'q') {
-            quitting = false;
-        }
-
-        if (key != KEY_CTRL_L) {
-            reloading = false;
-        }
-
-        bool keepMessage = false;
-
-        if (key == KEY_CTRL_Z || key == KEY_CTRL_Y) {
-            // Deshacer y rehacer funcionan tambien mientras se edita.
-            if (key == KEY_CTRL_Z) {
-                if (can_undo(&manager)) {
-                    undo_edit(&manager);
-                    set_message(&manager, "undone");
-                } else {
-                    set_message(&manager, "nothing to undo");
-                }
-            } else {
-                if (can_redo(&manager)) {
-                    redo_edit(&manager);
-                    set_message(&manager, "redone");
-                } else {
-                    set_message(&manager, "nothing to redo");
-                }
-            }
-
-            keepMessage = true;
-            recalculate(&manager);
-        } else if (key == KEY_CTRL_L) {
-            // Recargar el archivo, por si se cambio por fuera.
-            if (path == NULL) {
-                set_message(&manager, "no file to load");
-            } else if (manager.dirty && !reloading) {
-                reloading = true;
-                set_message(&manager, "unsaved changes: press Ctrl+L again to reload");
-            } else {
-                int ignored = 0;
-
-                clear_sheet(&manager);
-                load_file(path, &manager, &ignored);
-
-                reloading = false;
-                set_message(&manager, "reloaded");
-            }
-
-            keepMessage = true;
-        } else if (key == KEY_CTRL_C) {
-            copy_cell_content(&manager, manager.cursor.x, manager.cursor.y);
-            set_message(&manager, "copied");
-            keepMessage = true;
-        } else if (key == KEY_CTRL_V) {
-            if (has_clipboard()) {
-                if (manager.editing) {
-                    // Pegar dentro de la celda: el texto entra donde esta el
-                    // cursor de texto.
-                    paste_cell_text(&manager, manager.cursor.x, manager.cursor.y);
-                } else {
-                    paste_cell_content(&manager, manager.cursor.x, manager.cursor.y);
-                }
-
-                set_message(&manager, "pasted");
-                keepMessage = true;
-
-                // La celda pegada tiene que enseñar su valor, no el viejo.
-                recalculate(&manager);
-            } else {
-                set_message(&manager, "the clipboard is empty");
-            }
-
-            keepMessage = true;
-        } else if (manager.editing) {
-            switch (key) {
-                case KEY_ESC:
-                    manager.editing = false;
-                    keepMessage = recalculate(&manager);
-                    break;
-                case KEY_ENTER:
-                    manager.editing = false;
-                    if (manager.cursor.y < UINT16_MAX) manager.cursor.y++;
-                    keepMessage = recalculate(&manager);
-                    break;
-                case KEY_BACKSPACE:
-                    edit_backspace(&manager);
-                    break;
-                case KEY_DELETE:
-                    edit_delete(&manager);
-                    break;
-                case KEY_HOME:
-                    edit_to_start(&manager);
-                    break;
-                case KEY_END:
-                    edit_to_end(&manager);
-                    break;
-                case KEY_UP:
-                    manager.editing = false;
-                    if (manager.cursor.y > 0) manager.cursor.y--;
-                    keepMessage = recalculate(&manager);
-                    break;
-                case KEY_DOWN:
-                    manager.editing = false;
-                    if (manager.cursor.y < UINT16_MAX) manager.cursor.y++;
-                    keepMessage = recalculate(&manager);
-                    break;
-                case KEY_LEFT:
-                    // Las flechas mueven el cursor de texto, no la celda.
-                    edit_move_cursor(&manager, -1);
-                    break;
-                case KEY_RIGHT:
-                    edit_move_cursor(&manager, 1);
-                    break;
-                default:
-                    if (key >= 32 && key < 127) {
-                        char character = (char) key;
-                        edit_insert(&manager, &character, 1);
-                    }
-                    break;
-            }
-        } else {
-            switch (key) {
-                case 'q':
-                    // Si hay cambios sin guardar se pide confirmacion.
-                    if (manager.dirty && !quitting) {
-                        quitting = true;
-                        set_message(&manager, "unsaved changes: press q again to quit");
-                        keepMessage = true;
-                    } else {
-                        running = false;
-                    }
-                    break;
-                case 'h':
-                case 'a':
-                case KEY_LEFT:
-                    if (manager.cursor.x > 0) manager.cursor.x--;
-                    break;
-                case 'l':
-                case 'd':
-                case KEY_RIGHT:
-                    if (manager.cursor.x < UINT16_MAX) manager.cursor.x++;
-                    break;
-                case 'k':
-                case 'w':
-                case KEY_UP:
-                    if (manager.cursor.y > 0) manager.cursor.y--;
-                    break;
-                case 'j':
-                case 's':
-                case KEY_DOWN:
-                    if (manager.cursor.y < UINT16_MAX) manager.cursor.y++;
-                    break;
-                case 'i':
-                case KEY_ENTER:
-                    // Se edita el contenido que ya tiene la celda, con el
-                    // cursor de texto al final.
-                    manager.editing = true;
-                    edit_reset(&manager);
-                    break;
-                case 'x':
-                case KEY_DELETE:
-                    clear_cell(&manager, manager.cursor.x, manager.cursor.y);
-                    keepMessage = recalculate(&manager);
-                    break;
-                case 'v':
-                    manager.showValues = !manager.showValues;
-                    break;
-                case KEY_CTRL_R: {
-                    char message[MESSAGE_SIZE];
-                    int status = run_script(&manager, message, MESSAGE_SIZE);
-                    if (status == SCRIPT_OK) {
-                        manager.showValues = true;
-
-                        if (message[0] == '\0') {
-                            snprintf(message, MESSAGE_SIZE, "script executed");
-                        }
-                    }
-                    set_message(&manager, message);
-                    keepMessage = true;
-                    break;
-                }
-                case KEY_CTRL_S:
-                    if (path == NULL) {
-                        set_message(&manager, "no file to save");
-                    } else if (save_file(path, &manager) == FILE_LOADED) {
-                        set_message(&manager, "saved");
-                        manager.dirty = false;
-                        keepMessage = true;
-                    } else {
-                        set_message(&manager, "cannot write file");
-                    }
-                    break;
-                default:
-                    if (key >= 32 && key < 127) {
-                        // Una tecla cualquiera empieza a editar la celda, y
-                        // reemplaza su contenido.
-                        manager.editing = true;
-                        clear_cell(&manager, manager.cursor.x, manager.cursor.y);
-
-                        char character = (char) key;
-                        edit_insert(&manager, &character, 1);
-                    }
-                    break;
-            }
-        }
-
-        if (!keepMessage) {
-            set_message(&manager, "");
-        }
+        handle_key(&editor, &manager, key);
     }
 
     close_screen();

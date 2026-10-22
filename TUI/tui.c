@@ -25,6 +25,9 @@ void open_screen() {
     platform_open_screen();
 
     printf("\x1b[?1049h");
+    // La terminal avisa cuando pega un texto, para que el editor sepa que es
+    // un pegado y no teclas tecleadas.
+    printf("\x1b[?2004h");
     // El cursor del hardware se esconde: la celda seleccionada ya dice donde
     // esta el cursor, y si no parpadea en medio de la pantalla.
     printf("\x1b[?25l");
@@ -33,6 +36,7 @@ void open_screen() {
 }
 
 void close_screen() {
+    printf("\x1b[?2004l");
     printf("\x1b[?25h");
     printf("\x1b[?1049l");
     flush();
@@ -56,4 +60,8 @@ void print(char* p1, ...) {
 
 int getkey() {
     return platform_getkey();
+}
+
+const char *get_paste_text() {
+    return platform_paste_text();
 }

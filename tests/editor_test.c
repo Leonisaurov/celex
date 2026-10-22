@@ -103,9 +103,7 @@ int main(void) {
 
     // Copiar y pegar.
     copy_cell_content(&manager, 1, 1);
-    manager.cursor.x = 3;
-    manager.cursor.y = 3;
-    paste_cell_content(&manager, 3, 3);
+    paste_cell_content(&manager, 3, 3, clipboard_text(&manager.clipboard));
     check_content(&manager, 3, 3, "7", "pegar en una celda vacia");
 
     // Pegar y deshacer deja la celda como estaba.
@@ -118,7 +116,7 @@ int main(void) {
     check_value(&manager, 5, 5, "42", "la celda tiene valor");
 
     copy_cell_content(&manager, 1, 1);
-    paste_cell_content(&manager, 5, 5);
+    paste_cell_content(&manager, 5, 5, clipboard_text(&manager.clipboard));
     check_content(&manager, 5, 5, "7", "pegar encima de una celda con valor");
     check_value(&manager, 5, 5, "", "el valor viejo se invalida al pegar");
 
@@ -127,7 +125,8 @@ int main(void) {
     undo_edit(&manager);
     check_value(&manager, 5, 5, "", "el valor se invalida al deshacer");
 
-    // Pegar dentro de una celda pega el resultado, no la formula.
+    // Pegar dentro de una celda pega el texto del portapapeles, donde esta
+    // el cursor.
     set_cell_content(&manager, 6, 6, "A1 + 2");
     set_cell_value(&manager, 6, 6, "3");
     copy_cell_content(&manager, 6, 6);
@@ -135,8 +134,8 @@ int main(void) {
     manager.cursor.x = 7;
     manager.cursor.y = 7;
     manager.editOffset = 0;
-    paste_cell_text(&manager, 7, 7);
-    check_content(&manager, 7, 7, "3", "pegar dentro de una celda pega el resultado");
+    paste_cell_text(&manager, 7, 7, clipboard_text(&manager.clipboard));
+    check_content(&manager, 7, 7, "A1 + 2", "pegar dentro de una celda pega la formula");
 
     // Si la celda copiada no tiene valor, se pega su contenido.
     set_cell_content(&manager, 8, 8, "sin valor");
@@ -145,7 +144,7 @@ int main(void) {
     manager.cursor.x = 9;
     manager.cursor.y = 9;
     manager.editOffset = 0;
-    paste_cell_text(&manager, 9, 9);
+    paste_cell_text(&manager, 9, 9, clipboard_text(&manager.clipboard));
     check_content(&manager, 9, 9, "sin valor", "pegar una celda sin valor pega su contenido");
 
     free_cell_manager(&manager);

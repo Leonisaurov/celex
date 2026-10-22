@@ -1,6 +1,7 @@
 #ifndef CELEX_TUI_CELL_MANAGER
 #define CELEX_TUI_CELL_MANAGER
 #include <stdbool.h>
+#include "clipboard.h"
 #include "hashmap.h"
 #include "tui.h"
 #include "cell.h"
@@ -36,6 +37,8 @@ typedef struct {
     char message[MESSAGE_SIZE];
     History undo;
     History redo;
+    // El portapapeles del editor: lo que se copia y lo que se pega.
+    Clipboard clipboard;
 } CellManager;
 
 CellManager new_cell_manager(TermSize size);
@@ -64,15 +67,16 @@ bool can_redo(CellManager *manager);
 // Cambia el contenido de una celda y lo deja en el historial.
 void edit_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *content);
 
-// Copia el contenido de una celda al portapapeles del editor, y pega el
-// contenido del portapapeles en una celda.
+// Copia el contenido de una celda al portapapeles del editor, y deja la
+// celda marcada.
 void copy_cell_content(CellManager *manager, unsigned int x, unsigned int y);
-void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y);
 
-// Pega dentro de la celda que se esta editando: el texto entra donde esta el
-// cursor de texto, en vez de reemplazar el contenido entero.
-void paste_cell_text(CellManager *manager, unsigned int x, unsigned int y);
-bool has_clipboard(void);
+// Pega un texto en una celda, reemplazando lo que hay en ella.
+void paste_cell_content(CellManager *manager, unsigned int x, unsigned int y, const char *text);
+
+// Pega texto dentro de la celda que se esta editando: el texto entra donde
+// esta el cursor de texto, en vez de reemplazar el contenido entero.
+void paste_cell_text(CellManager *manager, unsigned int x, unsigned int y, const char *text);
 
 // El cursor de texto, dentro del contenido de la celda que se edita.
 void edit_reset(CellManager *manager);

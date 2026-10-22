@@ -26,6 +26,9 @@ TUI = $(BUILD)/celex
 SCRIPT = $(BUILD)/celexs
 RUNNER = $(BUILD)/runner
 EDITOR_TEST = $(BUILD)/editor_test
+KEYS_TEST = $(BUILD)/keys_test
+INPUT_TEST = $(BUILD)/input_test
+APP_TEST = $(BUILD)/app_test
 
 # El numero de compilacion va en la barra del editor, para saber siempre con
 # que binario se esta trabajando.
@@ -67,6 +70,18 @@ $(EDITOR_TEST): tests/editor_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES) $(VERSIO
 	mkdir -p $(BUILD)
 	$(CC) tests/editor_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES) -ITUI
 
+$(KEYS_TEST): tests/keys_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES) $(VERSION_HEADER)
+	mkdir -p $(BUILD)
+	$(CC) tests/keys_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES) -ITUI
+
+$(INPUT_TEST): tests/input_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES) $(VERSION_HEADER)
+	mkdir -p $(BUILD)
+	$(CC) tests/input_test.c $(EDITOR_SOURCES) $(SHARED_SOURCES) -o $@ $(CFLAGS) $(SANITIZE) $(INCLUDES) -ITUI
+
+$(APP_TEST): tests/app_test.c
+	mkdir -p $(BUILD)
+	$(CC) tests/app_test.c -o $@ $(CFLAGS) $(SANITIZE)
+
 run: build
 	$(TUI) sample.cle
 
@@ -74,9 +89,12 @@ run-script: build
 	$(SCRIPT) sample.cle --values
 
 # Las pruebas del lenguaje y de la hoja.
-test: build $(RUNNER) $(EDITOR_TEST)
+test: build $(RUNNER) $(EDITOR_TEST) $(KEYS_TEST) $(INPUT_TEST) $(APP_TEST)
 	$(RUNNER) $(SCRIPT) tests
 	$(EDITOR_TEST)
+	$(KEYS_TEST)
+	$(INPUT_TEST)
+	$(APP_TEST) $(TUI)
 
 clean:
 	rm -rf $(BUILD)

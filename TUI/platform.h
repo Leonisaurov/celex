@@ -15,4 +15,7 @@ void platform_close_screen();
 // Espera una tecla y devuelve su codigo, o -1 si no hay ninguna.
 int platform_getkey();
 
+// El texto del ultimo pegado de la terminal.
+const char *platform_paste_text();
+
 #endif

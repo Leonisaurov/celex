@@ -1,9 +1,11 @@
 #include "platform.h"
+#include "input.h"
 #include "tui.h"
 
 #ifdef _WIN32
 
 #include <windows.h>
+#include <io.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -18,6 +20,9 @@ static UINT input_code_page = 0;
 
 static int input_is_console = 0;
 static int output_is_console = 0;
+
+// Los caracteres que llegan de la consola.
+static Input console_input;
 
 static HANDLE std_input(void) {
     if (input_handle == INVALID_HANDLE_VALUE) {
@@ -49,6 +54,147 @@ TermSize getTerminalSize() {
     return size;
 }
 
+// El momento de un evento de la consola. La consola de Windows no da la
+// hora de cada evento, asi que se usa la del momento en que se leen: los
+// eventos de un pegado llegan todos juntos.
+static unsigned long long event_time(void) {
+    return (unsigned long long) GetTickCount64();
+}
+
+// Traduce una tecla de la consola a los bytes que Pondrian los caracteres
+// de la terminal.
+static void push_key(const INPUT_RECORD *record, unsigned long long time) {
+    const KEY_EVENT_RECORD *key = &record->Event.KeyEvent;
+    WORD code = key->wVirtualKeyCode;
+    DWORD state = key->dwControlKeyState;
+    bool control = (state & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) != 0;
+
+    switch (code) {
+        case VK_UP:
+            input_push_bytes(&console_input, "\x1b[A", 3, time);
+            return;
+        case VK_DOWN:
+            input_push_bytes(&console_input, "\x1b[B", 3, time);
+            return;
+        case VK_RIGHT:
+            input_push_bytes(&console_input, "\x1b[C", 3, time);
+            return;
+        case VK_LEFT:
+            input_push_bytes(&console_input, "\x1b[D", 3, time);
+            return;
+        case VK_HOME:
+            input_push_bytes(&console_input, "\x1b[H", 3, time);
+            return;
+        case VK_END:
+            input_push_bytes(&console_input, "\x1b[F", 3, time);
+            return;
+        case VK_DELETE:
+            input_push_bytes(&console_input, "\x1b[3~", 4, time);
+            return;
+        case VK_ESCAPE:
+            input_push_byte(&console_input, 0x1b, time);
+            return;
+        case VK_BACK:
+            input_push_byte(&console_input, 0x7f, time);
+            return;
+        case VK_RETURN:
+            input_push_byte(&console_input, '\r', time);
+            return;
+        case VK_TAB:
+            input_push_byte(&console_input, '\t', time);
+            return;
+        case VK_SHIFT:
+        case VK_CONTROL:
+        case VK_MENU:
+        case VK_LWIN:
+        case VK_RWIN:
+            // Las teclas modificadoras no son un caracter.
+            return;
+        default:
+            break;
+    }
+
+    char character = key->uChar.AsciiChar;
+
+    if (character == '\0') {
+        return;
+    }
+
+    if (control) {
+        if (character >= 'a' && character <= 'z') {
+            input_push_byte(&console_input, (unsigned char) (character - 'a' + 1), time);
+            return;
+        }
+
+        if (character >= 'A' && character <= 'Z') {
+            input_push_byte(&console_input, (unsigned char) (character - 'A' + 1), time);
+            return;
+        }
+
+        // El Ctrl+[ y el Ctrl+@ son el Escape.
+        if (character == '[' || character == '@') {
+            input_push_byte(&console_input, 27, time);
+            return;
+        }
+
+        // Algunos ya vienen como codigo de control.
+        if (character >= 1 && character <= 26) {
+            input_push_byte(&console_input, (unsigned char) character, time);
+            return;
+        }
+    }
+
+    input_push_byte(&console_input, (unsigned char) character, time);
+}
+
+// Lee los eventos que hay en la consola, sin esperar.
+static int read_console_events(void) {
+    INPUT_RECORD records[256];
+    DWORD available = 0;
+
+    if (!PeekConsoleInput(std_input(), NULL, 0, &available)) {
+        return -1;
+    }
+
+    if (available == 0) {
+        return 0;
+    }
+
+    DWORD wanted = available < 256 ? available : 256;
+    DWORD read = 0;
+
+    if (!ReadConsoleInput(std_input(), records, wanted, &read)) {
+        return -1;
+    }
+
+    unsigned long long time = event_time();
+
+    for (DWORD i = 0; i < read; i++) {
+        if (records[i].EventType != KEY_EVENT) {
+            continue;
+        }
+
+        if (!records[i].Event.KeyEvent.bKeyDown) {
+            continue;
+        }
+
+        push_key(&records[i], time);
+    }
+
+    return (int) read;
+}
+
+// Espera a que la consola tenga algo, con un tiempo maximo.
+static bool wait_console_events(DWORD milliseconds) {
+    HANDLE handle = std_input();
+
+    if (handle == INVALID_HANDLE_VALUE) {
+        return false;
+    }
+
+    return WaitForSingleObject(handle, milliseconds) == WAIT_OBJECT_0;
+}
+
 void platform_open_screen() {
     HANDLE output = std_output();
 
@@ -70,7 +216,7 @@ void platform_open_screen() {
 
     HANDLE input = std_input();
 
-    // Las teclas llegan de una en una y sin eco, como en el modo raw de POSIX.
+    // Las teclas llegan de en una y sin eco, como en el modo raw de POSIX.
     if (input != INVALID_HANDLE_VALUE && GetConsoleMode(input, &input_mode)) {
         DWORD mode = input_mode;
 
@@ -81,6 +227,11 @@ void platform_open_screen() {
         SetConsoleMode(input, mode);
         input_is_console = 1;
     }
+
+    input_init(&console_input);
+    // Solo en una consola de verdad se puede saber si los caracteres llegaron
+    // de golpe (un pegado) o de uno en uno (al teclear).
+    console_input.detectBursts = input_is_console != 0;
 }
 
 void platform_close_screen() {
@@ -103,81 +254,83 @@ void platform_close_screen() {
         SetConsoleCP(input_code_page);
         input_code_page = 0;
     }
+
+    input_free(&console_input);
 }
 
-static int map_key(KEY_EVENT_RECORD key) {
-    switch (key.wVirtualKeyCode) {
-        case VK_UP: return KEY_UP;
-        case VK_DOWN: return KEY_DOWN;
-        case VK_LEFT: return KEY_LEFT;
-        case VK_RIGHT: return KEY_RIGHT;
-        case VK_HOME: return KEY_HOME;
-        case VK_END: return KEY_END;
-        case VK_DELETE: return KEY_DELETE;
-        case VK_BACK: return KEY_BACKSPACE;
-        case VK_RETURN: return KEY_ENTER;
-        case VK_ESCAPE: return KEY_ESC;
-        case VK_TAB: return KEY_TAB;
-        default: break;
-    }
+// Lee de la entrada normal, que no es una consola.
+static int read_plain_bytes(Input *input) {
+    unsigned char buffer[256];
+    int count = 0;
 
-    char character = key.uChar.AsciiChar;
-
-    if (character == '\0') {
-        return -1;
-    }
-
-    if (key.dwControlKeyState & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED)) {
-        // Ctrl+letra, sin importar si la consola la entrega en mayusculas o
-        // en minusculas.
-        if (character >= 'a' && character <= 'z') {
-            return character - 'a' + 1;
+    for (;;) {
+        int read = _read(0, buffer, sizeof(buffer));
+        if (read <= 0) {
+            break;
         }
 
-        if (character >= 'A' && character <= 'Z') {
-            return character - 'A' + 1;
+        for (int i = 0; i < read; i++) {
+            input_push_byte(input, buffer[i], 0);
+        }
+
+        count += read;
+
+        if (count > 0) {
+            break;
         }
     }
 
-    return (int) (unsigned char) character;
+    return count;
 }
 
 int platform_getkey() {
-    if (!input_is_console) {
-        // Sin consola no hay teclas: se lee la entrada normal.
-        int character = getchar();
-
-        return character == EOF ? -1 : character;
-    }
-
     for (;;) {
-        INPUT_RECORD record;
-        DWORD count = 0;
+        InputEvent event;
 
-        if (!ReadConsoleInput(std_input(), &record, 1, &count) || count == 0) {
+        if (input_next(&console_input, &event)) {
+            if (event.kind == INPUT_PASTE) {
+                return KEY_PASTE;
+            }
+
+            return event.key;
+        }
+
+        if (!input_is_console) {
+            // Sin consola no hay teclas: se lee la entrada normal.
+            if (read_plain_bytes(&console_input) <= 0) {
+                return -1;
+            }
+
+            continue;
+        }
+
+        // Si ya hay caracteres a medias, se espera un poco a que llegue el
+        // resto de la secuencia de escape. Si no hay nada, se espera a que
+        // pulse una tecla.
+        DWORD wait = input_pending(&console_input) ? 30 : INFINITE;
+
+        if (input_in_paste(&console_input)) {
+            wait = 200;
+        }
+
+        if (!wait_console_events(wait)) {
+            // No llego nada: lo que este a medias se resuelve.
+            input_no_more_bytes(&console_input);
+            continue;
+        }
+
+        if (read_console_events() < 0) {
             return -1;
         }
-
-        if (record.EventType != KEY_EVENT) {
-            continue;
-        }
-
-        if (!record.Event.KeyEvent.bKeyDown) {
-            continue;
-        }
-
-        int key = map_key(record.Event.KeyEvent);
-        if (key < 0) {
-            continue;
-        }
-
-        return key;
     }
+}
+
+const char *platform_paste_text(void) {
+    return input_paste_text(&console_input);
 }
 
 #else
 
-#include <asm-generic/ioctls.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -185,9 +338,14 @@ int platform_getkey() {
 #include <unistd.h>
 
 #include <sys/ioctl.h>
+#include <sys/select.h>
+#include <sys/time.h>
 
 static struct termios term;
 static struct termios raw_term;
+
+// Los caracteres que llegan de la terminal.
+static Input terminal_input;
 
 TermSize getTerminalSize() {
     struct winsize win;
@@ -208,6 +366,15 @@ TermSize getTerminalSize() {
     };
 }
 
+// El momento actual, en milisegundos.
+static unsigned long long now_ms(void) {
+    struct timeval current;
+
+    gettimeofday(&current, NULL);
+
+    return (unsigned long long) current.tv_sec * 1000ULL + (unsigned long long) current.tv_usec / 1000ULL;
+}
+
 void platform_open_screen() {
     tcgetattr(STDIN_FILENO, &term);
 
@@ -218,70 +385,84 @@ void platform_open_screen() {
     raw_term.c_cc[VTIME] = 0;
 
     tcsetattr(STDIN_FILENO, TCSANOW, &raw_term);
+
+    input_init(&terminal_input);
+    // Solo en una terminal de verdad se puede saber si los caracteres
+    // llegaron de golpe (un pegado) o de uno en uno (al teclear).
+    terminal_input.detectBursts = isatty(STDIN_FILENO) != 0;
 }
 
 void platform_close_screen() {
     tcsetattr(STDIN_FILENO, TCSANOW, &term);
+
+    input_free(&terminal_input);
 }
 
-static int read_byte(unsigned int timeout) {
-    struct termios current;
-    tcgetattr(STDIN_FILENO, &current);
+// Espera a que la terminal tenga algo, con un tiempo maximo. Con un tiempo
+// negativo espera sin limite.
+static bool wait_input(int milliseconds) {
+    fd_set set;
+    FD_ZERO(&set);
+    FD_SET(STDIN_FILENO, &set);
 
-    struct termios polled = current;
-    polled.c_cc[VMIN] = timeout == 0 ? 1 : 0;
-    polled.c_cc[VTIME] = timeout;
-    tcsetattr(STDIN_FILENO, TCSANOW, &polled);
+    struct timeval current;
+    struct timeval *timeout = NULL;
 
-    unsigned char byte = 0;
-    ssize_t count = read(STDIN_FILENO, &byte, 1);
-
-    tcsetattr(STDIN_FILENO, TCSANOW, &current);
-
-    if (count < 1) {
-        return -1;
+    if (milliseconds >= 0) {
+        current.tv_sec = milliseconds / 1000;
+        current.tv_usec = (milliseconds % 1000) * 1000;
+        timeout = &current;
     }
 
-    return (int) byte;
+    return select(STDIN_FILENO + 1, &set, NULL, NULL, timeout) > 0;
 }
 
 int platform_getkey() {
-    int byte = read_byte(0);
+    for (;;) {
+        InputEvent event;
 
-    if (byte < 0) {
-        return -1;
-    }
-
-    if (byte != KEY_ESC) {
-        return byte;
-    }
-
-    int next = read_byte(2);
-    if (next < 0 || (next != '[' && next != 'O')) {
-        return KEY_ESC;
-    }
-
-    int code = read_byte(2);
-    if (code < 0) {
-        return KEY_ESC;
-    }
-
-    switch (code) {
-        case 'A': return KEY_UP;
-        case 'B': return KEY_DOWN;
-        case 'C': return KEY_RIGHT;
-        case 'D': return KEY_LEFT;
-        case 'H': return KEY_HOME;
-        case 'F': return KEY_END;
-        case '3': {
-            int tilde = read_byte(2);
-            if (tilde == '~') {
-                return KEY_DELETE;
+        if (input_next(&terminal_input, &event)) {
+            if (event.kind == INPUT_PASTE) {
+                return KEY_PASTE;
             }
-            return KEY_ESC;
+
+            return event.key;
         }
-        default: return KEY_ESC;
+
+        // Si ya hay caracteres a medias, se espera un poco a que llegue el
+        // resto de la secuencia de escape. Si no hay nada, se espera a que
+        // pulse una tecla.
+        int wait = input_pending(&terminal_input) ? 30 : -1;
+
+        if (input_in_paste(&terminal_input)) {
+            wait = 200;
+        }
+
+        if (!wait_input(wait)) {
+            // No llego nada: lo que este a medias se resuelve.
+            input_no_more_bytes(&terminal_input);
+            continue;
+        }
+
+        // Se leen todos los caracteres que hay: si la terminal ha pegado un
+        // texto, llega todo de golpe.
+        unsigned char buffer[512];
+        ssize_t count = read(STDIN_FILENO, buffer, sizeof(buffer));
+
+        if (count < 1) {
+            return -1;
+        }
+
+        unsigned long long time = now_ms();
+
+        for (ssize_t i = 0; i < count; i++) {
+            input_push_byte(&terminal_input, buffer[i], time);
+        }
     }
+}
+
+const char *platform_paste_text(void) {
+    return input_paste_text(&terminal_input);
 }
 
 #endif
