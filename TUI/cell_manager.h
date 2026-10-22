@@ -63,6 +63,10 @@ void print_status(CellManager *manager, const char *mode, const char *path);
 // dx columnas y dy filas. Cero es no deslizar: pintar de golpe.
 int pan_frames(int dx, int dy);
 
+// El tamano de las celdas, en columnas y filas de pantalla. Fuera de los
+// limites no se sale.
+void set_cell_size(int width, int height);
+
 // Vacia la hoja entera y olvida los cambios deshechos.
 void clear_sheet(CellManager *manager);
 

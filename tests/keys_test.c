@@ -272,6 +272,30 @@ int main(void) {
     check_message(&empty, "the clipboard is empty", "pegar sin portapapeles avisa");
     check(!empty.dirty, "pegar sin portapapeles no cambia la hoja");
 
+    // El tamano de las celdas: los corchetes mueven el ancho y las llaves el
+    // alto, y ninguna de esas teclas empieza a escribir en la celda.
+    CellManager sized = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    Editor sizedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+
+    set_cell_size(4, 2);
+
+    int baseWidth = cellWidth;
+    int baseHeight = cellHeight;
+
+    handle_key(&sizedEditor, &sized, ']');
+    check(cellWidth == baseWidth + 1, "el corchete cierra hace la celda mas ancha");
+    check(!sized.editing, "cambiar el tamano no empieza a escribir en la celda");
+    check(!sized.dirty, "cambiar el tamano no cuenta como un cambio de la hoja");
+
+    handle_key(&sizedEditor, &sized, '}');
+    check(cellHeight == baseHeight + 1, "la llave cierra hace la celda mas alta");
+
+    handle_key(&sizedEditor, &sized, '[');
+    handle_key(&sizedEditor, &sized, '{');
+    check(cellWidth == baseWidth && cellHeight == baseHeight, "el corchete y la llave de abrir los deshacen");
+
+    free_cell_manager(&sized);
+
     free_cell_manager(&empty);
     free_cell_manager(&manager);
 

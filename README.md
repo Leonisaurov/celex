@@ -197,6 +197,8 @@ the keyboard, so a slow frame is a key that answers late.
 | `Esc`              | leave the cell                            |
 | `x`                | clear the cell                            |
 | `v`                | show the values or the source of the cells|
+| `]` `[`            | wider or narrower cells                   |
+| `}` `{`            | taller or shorter cells                   |
 | `Ctrl+R`           | evaluate the sheet                        |
 | `Ctrl+S`           | save the sheet into the opened file       |
 | `Ctrl+Z`           | undo the last change                      |
@@ -249,6 +251,13 @@ still partly there. A move that pans the view is drawn in two frames in between,
 a few milliseconds apart, so the grid is seen gliding over those cut cells. A
 jump that is too big (many columns at once) is drawn in one frame, because
 animating it would leave the editor behind the keys.
+
+The size of the cells is not fixed: `]` and `[` make a cell wider or narrower,
+`}` and `{` make it taller or shorter, and the bar says what they are with
+`7x5`. A wider cell shows a formula that would otherwise wrap, a narrower one
+puts more of the sheet on the screen. The two sizes have limits — from two
+columns to forty, from one row to eight — so a cell can never be bigger than
+the screen nor too small to read.
 
 The status bar starts with the number of the build, so it is always clear
 which binary is being used. It is the commit of the repository, with a `+`

@@ -186,6 +186,20 @@ int main(void) {
     check(pan_frames(2, 0) == 1, "dos columnas se deslizan en un fotograma");
     check(pan_frames(20, 0) == 0, "un salto grande se pinta de golpe");
 
+    // El tamano de las celdas tiene limites: por encima y por debajo de ellos no
+    // se sale, y se puede volver al de siempre.
+    set_cell_size(CELL_MAX_WIDTH + 10, CELL_MAX_HEIGHT + 10);
+    check(cellWidth == CELL_MAX_WIDTH, "el ancho de celda no pasa del maximo");
+    check(cellHeight == CELL_MAX_HEIGHT, "el alto de celda no pasa del maximo");
+
+    set_cell_size(0, 0);
+    check(cellWidth == CELL_MIN_WIDTH, "el ancho de celda no baja del minimo");
+    check(cellHeight == CELL_MIN_HEIGHT, "el alto de celda no baja del minimo");
+
+    set_cell_size(4, 2);
+    check(cellWidth == 4 && cellHeight == 2, "el tamano de celda se puede poner el de siempre");
+    check(pan_frames(CELL_SIZE_X + 1, 0) == 2, "con el tamano de siempre, el deslizamiento es de dos fotogramas");
+
     if (failures == 0) {
         printf("  edicion: todo correcto\n");
         return 0;

@@ -2,6 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+// El tamano con el que arranca el editor: cuatro columnas y dos filas, como
+// las celdas de siempre de una hoja de calculo.
+int cellWidth = 4;
+int cellHeight = 2;
+
 Cell new_cell() {
     Cell cell;
     cell.content = NULL;

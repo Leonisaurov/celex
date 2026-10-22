@@ -789,6 +789,26 @@ static char previous_status[MESSAGE_SIZE * 2];
 static char previous_extra[MESSAGE_SIZE * 2];
 static bool previous_status_ready = false;
 
+// Cambia el tamano de las celdas, con los limites puestos.
+void set_cell_size(int width, int height) {
+    if (width < CELL_MIN_WIDTH) width = CELL_MIN_WIDTH;
+    if (width > CELL_MAX_WIDTH) width = CELL_MAX_WIDTH;
+    if (height < CELL_MIN_HEIGHT) height = CELL_MIN_HEIGHT;
+    if (height > CELL_MAX_HEIGHT) height = CELL_MAX_HEIGHT;
+
+    if (width == cellWidth && height == cellHeight) {
+        return;
+    }
+
+    cellWidth = width;
+    cellHeight = height;
+
+    // Con otro tamano todo cambia de sitio: se olvida el fotograma anterior,
+    // para volver a pintar la rejilla entera en vez de ir corrigiendo lo que
+    // se fue moviendo.
+    free_previous();
+}
+
 // El resaltado de una fila, o -1 si la fila no esta resaltada.
 static void row_highlight(int y, int highlight_x, int highlight_y, int width, int *start, int *end) {
     *start = -1;
@@ -1324,6 +1344,11 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     append_text(status, sizeof(status), "  ");
     // Si se ven los valores o el fuente de las celdas.
     append_padded(status, sizeof(status), manager->showValues ? "VAL" : "SRC", 3);
+    append_text(status, sizeof(status), "  ");
+    // El tamano de las celdas, que se cambia con las teclas del corchete.
+    char size_text[16];
+    snprintf(size_text, sizeof(size_text), "%dx%d", cellWidth, cellHeight);
+    append_padded(status, sizeof(status), size_text, 4);
     append_text(status, sizeof(status), "  ");
     // La celda copiada, para saber que hay en el portapapeles.
     char copied[16];

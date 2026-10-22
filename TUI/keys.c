@@ -292,6 +292,21 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
             case 'v':
                 manager->showValues = !manager->showValues;
                 break;
+            case ']':
+                // El tamano de las celdas, por separado el ancho y el alto,
+                // como el ancho de columna y el alto de fila de una hoja de
+                // calculo. Las llaves son los corchetes con mayusculas.
+                set_cell_size(cellWidth + 1, cellHeight);
+                break;
+            case '[':
+                set_cell_size(cellWidth - 1, cellHeight);
+                break;
+            case '}':
+                set_cell_size(cellWidth, cellHeight + 1);
+                break;
+            case '{':
+                set_cell_size(cellWidth, cellHeight - 1);
+                break;
             case KEY_CTRL_R: {
                 char message[MESSAGE_SIZE];
                 int status = run_script(manager, message, MESSAGE_SIZE);

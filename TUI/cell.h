@@ -2,9 +2,22 @@
 #define CELEX_TUI_CELL
 #include <stddef.h>
 
-#define CELL_SIZE_X 4
-#define CELL_SIZE_Y 2
-#define CELL_CAPACITY (CELL_SIZE_X * CELL_SIZE_Y)
+// El tamano de una celda en la pantalla: cuantas columnas y cuantas filas
+// ocupa. No esta fijado al compilar: se cambia en marcha con las teclas del
+// mas y el menos, para ver formulas largas o mas hojas en la pantalla.
+extern int cellWidth;
+extern int cellHeight;
+
+#define CELL_SIZE_X (cellWidth)
+#define CELL_SIZE_Y (cellHeight)
+#define CELL_CAPACITY (cellWidth * cellHeight)
+
+// Limites del tamano, para que una celda quepa en la pantalla mas pequena y
+// no se coma toda una hoja la mas grande.
+#define CELL_MIN_WIDTH 2
+#define CELL_MAX_WIDTH 40
+#define CELL_MIN_HEIGHT 1
+#define CELL_MAX_HEIGHT 8
 
 typedef struct {
     char *content;
