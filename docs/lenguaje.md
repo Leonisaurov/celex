@@ -2,7 +2,7 @@
 
 El lenguaje de la hoja. Está en `Lang/` (escáner, analizador, compilador y máquina)
 y lo que lo une a la hoja está en `Sheet/`. Corre de dos formas: dentro del editor
-(al confirmar una celda, con `Ctrl+R`, al importar) y solo, con `celexs`.
+(al confirmar una celda y al recalcular con `Ctrl+R`) y solo, con `celexs`.
 
 ## Un programa es una hoja
 
@@ -95,8 +95,10 @@ lenguaje, no llamadas, y no se pueden usar como valores.
 ## Celdas y orden de cálculo
 
 Una referencia es una o más letras mayúsculas y unos números: `A1`, `AB12`. `A` vale
-1, la columna es base 26, y `AB` por tanto vale 28. La fila empieza en 1. `A0` no
-vale; `A1B` tampoco — sobra algo detrás.
+1, la columna es base 26, y `AB` por tanto vale 28. La fila empieza en 1: no hay
+fila 0, así que `A0 = 5` se traga en silencio — se asigna a una celda que no existe.
+`A1B` tampoco es una referencia — sobra algo detrás —, y tampoco da error: se queda
+como nombre de variable, y `A1B = 7` asigna una variable.
 
 **El lenguaje no sabe mirar hacia delante**: una celda que se usa antes de estar
 asignada valdría 0. Eso se resuelve fuera del lenguaje, reordenando las asignaciones
@@ -127,8 +129,8 @@ celexs hoja.cle --values   imprime ademas el valor de cada celda, en stdout
 ```
 
 Con `--values` lo que imprime el programa se manda a la salida de error, para que la
-salida estándar solo traiga las celdas, una por línea, en el orden en que el
-lenguaje puede calcularlas:
+salida estándar solo traiga las celdas, una por línea, en el mismo orden en que el
+editor guarda la hoja: por columna y después por fila:
 
 ```
 A1 = 1
@@ -159,9 +161,11 @@ Lo que el programa imprima con `print` **no llega a la pantalla del editor**: se
 tira a `NUL` (o `/dev/null`), porque rompería el dibujo.
 
 Si una celda no se puede calcular, las demás se calculan igual y solo se avisa de
-esa: `B1: Se esperaba una expresion`, o `B1: Error en la operacion`. Como aviso, no
-como fallo, si alguna se pudo. Si no se pudo ninguna, es un error. El aviso cabe en
-la barra: lo que pase de 127 caracteres se corta.
+esa: `B1: Se esperaba una expresion`. El aviso sale cuando el fuente de la celda no
+compila; si lo que falla es la operación en sí —dividir por cero—, su aviso se tira
+como el de `print`, y la celda se queda sin valor sin más nombre que ese. Como
+aviso, no como fallo, si alguna se pudo. Si no se pudo ninguna, es un error. El aviso
+cabe en la barra: lo que pase de 127 caracteres se corta.
 
 Tras `Ctrl+R` se ponen los valores en la pantalla (`showValues`), para ver el
 resultado. El editor deja también el mensaje `script executed` cuando no hubo nada

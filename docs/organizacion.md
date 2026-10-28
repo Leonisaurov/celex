@@ -31,7 +31,7 @@ intérprete de comandos.
 | Fichero | Qué es |
 |---|---|
 | `ref.c` / `ref.h` | una referencia de celda ↔ dos números: `ref_column_name`, `ref_to_string`, `ref_parse` |
-| `fileread.c` / `fileread.h` | leer un archivo entero a memoria (solo lo usan el intérprete y sus pruebas) |
+| `fileread.c` / `fileread.h` | leer un archivo entero a memoria (solo lo usa el intérprete `celexs`, para leer el guion) |
 | `hashmap.h` | el mapa hash, cabecera de terceros |
 | `debug.h` | las impresiones de depuración del lenguaje, activas solo con `-DCELEX_DEBUG` |
 
@@ -63,13 +63,15 @@ intérprete de comandos.
 | `input.c` / `input.h` | convierte lo que manda la terminal en teclas, pegados y clics |
 | `tui.c` / `tui.h` | la cara visible de la terminal: escribir, mover el cursor, leer una tecla |
 | `tui_platform.c` | la parte que depende del sistema: la consola de Win32, `termios` en POSIX |
-| `platform.h` | las cuatro funciones que el resto del editor puede pedir a la terminal |
+| `platform.h` | las seis funciones que el resto del editor puede pedir a la terminal |
 | `cell.c` / `cell.h` | una celda: su fuente, su valor y su formato; y el tamaño de celda |
-| `cell_manager.c` / `cell_manager.h` | el documento entero: las hojas, la rejilla, el pintado por diferencias, las tres barras, el historial, la edición, el autocompletado |
+| `cell_manager.c` / `cell_manager.h` | el documento entero: las hojas, la rejilla, el pintado por diferencias, la barra y las ventanas, las dos barras de abajo, el historial, la edición, el autocompletado |
 | `clipboard.c` / `clipboard.h` | el portapapeles del editor, y el portapapeles del sistema |
 | `complete.c` / `complete.h` | las palabras que ofrece el tabulador |
 | `theme.c` / `theme.h` | los colores: qué parte de la pantalla se pinta con qué secuencia |
-| `tools.c` / `tools.h` | la fila de las herramientas, y la tecla que hay detrás de cada botón |
+| `preferences.c` / `preferences.h` | las preferencias del usuario, en `$HOME/.config/celex/config`: tema, tamaño, barra y vista |
+| `tools.c` / `tools.h` | las secciones de la barra de herramientas, y la tecla que hay detrás de cada botón |
+| `popup.c` / `popup.h` | la ventana flotante: qué es, dónde se pone y qué fila se clica |
 | `document.c` / `document.h` | el `.clex`: la estructura del documento del editor |
 | `file.c` / `file.h` | leer y escribir el `.cle`, y decidir qué es cada archivo |
 | `script.c` / `script.h` | correr la hoja y rellenar los valores |
@@ -124,6 +126,12 @@ make DEBUG=1    con las impresiones de depuracion del lenguaje
 Lleva puesto `-fsanitize=address` por defecto; se quita con `SANITIZE=` en
 máquinas donde el sanitizador no esté instalado.
 
+La rama POSIX —el `#ifndef _WIN32` de `tui_platform.c` y de `paths.c`, con
+`termios` y la carpeta de configuracion `$HOME/.config/celex`— esta pensada para
+Linux y macOS. En esta maquina Windows se ejerce y se prueba **con WSL** (Windows
+Subsystem for Linux), que es un Linux de verdad: ahi corren `make`, `make test`, y
+la lectura de los temas propios y de las preferencias desde `~/.config/celex`.
+
 ## El número de compilación
 
 `build/version.h` se genera en cada build y no se commitea. Dentro hay una sola
@@ -140,7 +148,7 @@ estado, al principio, para que se sepa siempre con qué binario se está trabaja
 - **Los comentarios van en español**, y dicen por qué, no qué. Cada decisión que
   no es evidente tiene su comentario al lado: por qué el fotograma guarda números
   de estilo y no secuencias, por qué un paneo grande no se anima, por qué el
-  aviso de la fila de herramientas es corto.
+  aviso de la barra de herramientas es corto.
 - **Los mensajes de la pantalla van en inglés**, y son literales: `saved`,
   `copied A1`, `the last sheet stays`, `tools off`.
 - **Sin asignaciones en la declaración**, para poder seguir los `free` sin

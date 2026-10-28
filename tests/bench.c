@@ -74,12 +74,9 @@ static void fill(CellManager *manager, int columns, int rows) {
 }
 
 static Editor editor_for(void) {
-    Editor editor;
+    Editor editor = { .running = true };
 
-    editor.path = "bench.cle";
-    editor.running = true;
-    editor.quitting = false;
-    editor.reloading = false;
+    snprintf(editor.path, sizeof(editor.path), "%s", "bench.cle");
 
     return editor;
 }

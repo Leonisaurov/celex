@@ -14,11 +14,11 @@ celda no se toca, y el `.cle` sale sin formatos.
 
 Lo que se deja para despues, y por que:
 
-- **Los colores por teclado o por botones.** Hoy un color propio solo se pone
-  editando el `.clex`. Hace falta una fila de botones (abajo) o una tecla que
-  recorra la paleta; lo resuelve la barra de herramientas, que lleva su propio
-  capitulo. Una tecla `Ctrl+G` que pase el color de delante, y `Ctrl+I` el de
-  detras, es lo minimo para no tener que tocar el archivo.
+- **Los colores por botones o por ventana.** Hoy un color propio solo se pone
+  editando el `.clex`. Hace falta un item mas en `style` que abra una ventana con
+  la paleta, como la de los temas: dieciseis numeros pintados con su propio numero,
+  y una tecla `Ctrl+W` que pase el color de delante y `Ctrl+X` el de detras para
+  quien viva a teclado. Las dos teclas estan libres hoy (el 8 no: es el retroceso).
 - **Formatos de numero** (`#,##0.00`, porcentajes, fechas). Hace falta decidir
   como se ven los numeros —el lenguaje solo tiene enteros— y eso es un cambio del
   lenguaje, no del editor. Mejor despues de los numeros decimales.
@@ -31,16 +31,24 @@ Lo que se deja para despues, y por que:
 
 ## Herramientas a la vista, y raton
 
-Lo hecho: una sola lista (`Tool` con nombre y tecla) en `TUI/tools.c`, la fila
-`tools: bold line align copy paste undo redo save hide...` encima de las
-pestañas, y `Ctrl+K` para quitarla y devolverle la fila a la rejilla. La lista no
-tiene acciones propias: cada boton *es* su tecla, asi que la barra y el teclado no
-pueden contradecirse. Lo que no cabe en el ancho no se pinta, como las pestanas.
-En el documento se guarda `tools off`, y sin esa linea la fila esta puesta.
+Lo hecho: la barra arriba de todo, partida en secciones (`doc`, `edits`, `style`,
+`view`, `run`) con sus items de nombre y tecla en `TUI/tools.c`, y `Ctrl+K` (o un
+clic en el nombre del archivo) para quitarla y devolver la fila a la rejilla. Ningun
+boton tiene acciones propias: cada uno *es* su tecla, asi que la barra y el teclado
+no pueden contradecirse. Lo que no cabe en el ancho se cae por detras, sin pintar y
+sin clica, como las pestanas. En las preferencias del usuario se guarda `tools off`
+(y en el documento, en la primera version del formato), y sin esa linea la barra
+esta puesta.
 
-Quitar la fila quita el boton de quitarla, asi que quedan dos tiradores para
+Cada seccion cuelga una **ventana flotante**, y con ellas han llegado los unicos
+sitios donde antes no habia mas que la rejilla: la lista de los temas, donde cada
+nombre se escribe con su propio tema y se prueba al instante al moverse
+(`Ctrl+T`), y el campo de texto para guardar con otro nombre (`Ctrl+G`) o abrir un
+archivo (`Ctrl+Q`). La ventana es de la pantalla, no del documento: no se guarda.
+
+Quitar la barra quita el boton de quitarla, asi que quedan dos tiradores para
 volver: el chip `[tools]` al final de la fila de las pestanas, que solo se pinta
-mientras la fila esta fuera, y el nombre del archivo al final de la barra de
+mientras la barra esta fuera, y el nombre del archivo al final de la barra de
 estado, que esta siempre. El aviso que deja es `tools off`, corto a proposito: la
 barra va justa y un aviso largo se tapa el nombre, que es justamente lo que hay
 que poder ver y clica.
@@ -62,10 +70,10 @@ Lo que queda:
 - **Seleccion de rango con el arrastre.** Pide pedir tambien los movimientos con
   el boton apretado (`ESC[?1002h`) y un principio y un final en la hoja. Va junto
   con la seleccion de rango por teclado, que es la pieza que desbloquea mas cosas.
-- **Los colores por boton o por tecla.** Hoy un color propio solo se pone
+- **Los colores por boton o por ventana.** Hoy un color propio solo se pone
   editando el `.clex`. Una paleta de 16 numeros no cabe en una fila de botones,
-  pero un boton que los recorra si: `Ctrl+G` el de delante y `Ctrl+I` el de
-  detras, volviendo al color del tema al dar la vuelta.
+  pero una ventana flotante con las opciones si, como la de los temas: cada numero
+  escrito con su propio color, y elegirlo deja la celda pintada al instante.
 - **El tiempo del doble clic** esta fijado en 500 ms (`CLICK_DOUBLE_MS`). Si algun
   dia se quisiera configurable, seria una linea mas en el documento.
 - **Donde no hay raton** (una tuberia, las pruebas) todo sigue siendo de teclado,
@@ -77,8 +85,9 @@ Lo que queda:
 - **Seleccion de rango** (mayusculas + flechas, o arrastre). Sin ella no tiene
   sentido rellenar, borrar un bloque, ni copiar formatos en grupo. Es la pieza
   que desbloquea mas cosas.
-- **Rellenar** (`Ctrl+D` hacia abajo desde la seleccion) y **autocompletar por
-  serie** (1,2,3 → sigue la serie).
+- **Rellenar** hacia abajo desde la seleccion. Ojo con la tecla: `Ctrl+D` ya esta
+  ocupada, es la que quita la hoja, asi que habra que buscar una libre cuando exista
+  la seleccion de rango. Y **autocompletar por serie** (1,2,3 → sigue la serie).
 - **Numeros decimales y fechas** en el lenguaje, que es lo que abre los formatos
   de numero.
 - **Barra de formulas**: un campo encima de la rejilla donde se ve y se edita el
@@ -104,14 +113,14 @@ decimales, con un caso nuevo en `tests/cases`.
 
 Escribir `docs/` fue pasar fichero por fichero, y salieron cosas que estan metidas
 y no hacen nada, o que no cuadran. Ninguna es un fallo por el lado de usar el
-editor; es limpieza, y cada una merece su commit:
+editor; es limpieza, y cada una merece su commit. Ya se quitaron algunas (`run_external_script`
+y su temporal, `current_sheet`, una comprobacion escrita dos veces en el pintado, y el
+`sprintf` sin limite de `ref_to_string`, ahora `snprintf`). Quedan:
 
-- **`run_external_script` no la llama nadie** (`TUI/script.c:145`). Era el camino de
-  sacar `celexs` como proceso aparte; hoy `Ctrl+R` evalua dentro del proceso. O se
-  conecta a algo, o se quita, con su temporal, su `CELEX_POPEN` y sus cuatro
-  mensajes.
-- **`current_sheet` y `copy_cell_content` tampoco las llama nadie**
-  (`TUI/cell_manager.c:877`, `TUI/cell_manager.c:810`).
+- **`copy_cell_content` no la usa el programa**: el `Ctrl+C` compone el
+  portapapeles a mano en `TUI/keys.c`, sin pasar por esta ayuda
+  (`TUI/cell_manager.c:810`). Solo la llaman las pruebas. O se usa desde el
+  `Ctrl+C`, o se quita y se mueve al fichero de pruebas.
 - **`clipboard_value` no se lee nunca**: el valor de la celda copiada se guarda en el
   portapapeles y no se pega jamas (`TUI/clipboard.c:96`). Si algun dia se quiere
   pegar solo el valor, ahi esta; si no, ese `value` es peso muerto.
@@ -133,9 +142,13 @@ editor; es limpieza, y cada una merece su commit:
 - **`sprintf` sin limite** en `ref_to_string` (`Common/ref.c:30`) y en los `print`
   del lenguaje: el sitio se calcula antes de escribir, asi que hoy cabe, pero no lo
   comprueba nadie.
-- **Cuantos botones caben en la fila de herramientas** depende del ancho y no estaba
-  dicho en ningun sitio: en 80 columnas son diez, y `value`, `sheet` y `theme`
-  esperan pantalla mas ancha. Si la lista crece, merece la pena pensar en dos filas
-  o en un boton de mas, en vez de dejar botones invisibles.
+- **Cuantas secciones caben en la barra** depende del ancho, y esta dicho en el
+  codigo: `menu_fit` deja las que caben enteras y se caen las de detras, que son las
+  de menos uso. En 80 columnas caben las cinco. Si la lista de items crece, lo que
+  toca engordar es una seccion y no la barra: el desplegable mide lo que mida la
+  fila mas larga.
+- **La ventana flotante no se puede agrandar con la pantalla**: el alto de una lista
+  se recorta a lo que cabe, y las filas de mas no se ven ni se clica. Con temas de
+  sobra (`POPUP_LIMIT`) haria falta una lista con desplazamiento propio.
 
 Volver al indice: [docs/README.md](README.md).

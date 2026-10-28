@@ -1,7 +1,6 @@
 #include "document.h"
 
 #include "ref.h"
-#include "theme.h"
 
 #include <ctype.h>
 #include <stdio.h>
@@ -258,11 +257,10 @@ char *document_source(CellManager *manager) {
     Text text = { NULL, 0, 0 };
     char line[128];
 
-    snprintf(line, sizeof(line), "%s %d\ntheme %s\ncell-size %d %d\n%s",
-             DOCUMENT_MAGIC, DOCUMENT_VERSION, theme_name(), cellWidth, cellHeight,
-             // La fila de las herramientas solo se escribe cuando no esta puesta:
-             // sin la linea, el editor la pone.
-             manager->showTools ? "" : "tools off\n");
+    // El documento guarda la hoja: sus hojas, sus celdas y donde estaba el
+    // cursor. El tema, el tamano de las celdas y la barra de herramientas no
+    // son de la hoja sino del usuario, y viven en la configuracion.
+    snprintf(line, sizeof(line), "%s %d\n", DOCUMENT_MAGIC, DOCUMENT_VERSION);
 
     if (!text_add(&text, line)) {
         free(text.text);
@@ -433,12 +431,10 @@ int document_load(const char *content, CellManager *manager, int *ignored) {
         *ignored = 0;
     }
 
-    // El documento es la verdad: lo que hubiera antes se olvida.
+    // El documento es la verdad: lo que hubiera antes se olvida. Lo que no es
+    // de la hoja —el tema, el tamano de las celdas, la barra— se queda como lo
+    // dejo la configuracion del usuario.
     workbook_clear(manager);
-
-    // Sin la linea de las herramientas, la fila esta puesta, como al abrir el
-    // editor.
-    manager->showTools = true;
 
     char *text = (char *) malloc(strlen(content) + 1);
     if (text == NULL) {
@@ -493,40 +489,13 @@ int document_load(const char *content, CellManager *manager, int *ignored) {
             continue;
         }
 
-        if (strncmp(at, "theme", 5) == 0 && isspace((unsigned char) at[5])) {
-            char name[SHEET_NAME_SIZE];
-
-            // El nombre del tema va suelto, sin comillas.
-            at = read_word(at + 5, name, sizeof(name));
-
-            if (at == NULL || !theme_set_by_name(name)) {
-                ignoredLines++;
-            }
-        } else if (strncmp(at, "cell-size", 9) == 0 && isspace((unsigned char) at[9])) {
-            char *after = at + 9;
-
-            int width = read_number(&after);
-            int height = read_number(&after);
-
-            if (width < 0 || height < 0) {
-                ignoredLines++;
-            } else {
-                set_cell_size(width, height);
-            }
-        } else if (strncmp(at, "tools", 5) == 0 && isspace((unsigned char) at[5])) {
-            char name[SHEET_NAME_SIZE];
-
-            at = read_word(at + 5, name, sizeof(name));
-
-            if (at == NULL) {
-                ignoredLines++;
-            } else if (strcmp(name, "off") == 0) {
-                manager->showTools = false;
-            } else if (strcmp(name, "on") == 0) {
-                manager->showTools = true;
-            } else {
-                ignoredLines++;
-            }
+        if ((strncmp(at, "theme", 5) == 0 && isspace((unsigned char) at[5])) ||
+            (strncmp(at, "cell-size", 9) == 0 && isspace((unsigned char) at[9])) ||
+            (strncmp(at, "tools", 5) == 0 && isspace((unsigned char) at[5]))) {
+            // Eran ajustes del documento en la version anterior del formato.
+            // Ahora son preferencias del usuario y viven en la configuracion:
+            // se leen y se dejan estar, sin contarlos como lineas perdidas,
+            // para que un `.clex` viejo siga abriendose sin avisos.
         } else if (strncmp(at, "sheet", 5) == 0 && isspace((unsigned char) at[5])) {
             char name[SHEET_NAME_SIZE];
 

@@ -1,8 +1,9 @@
-# Teclas, clics y la fila de herramientas
+# Teclas, clics y la barra de herramientas
 
-Dos formas de mandar lo mismo, escritas una vez. La fila de botones no tiene
-ninguna orden propia: cada botón **es** la tecla que hace lo mismo
-(`TUI/tools.c:4-6`), así que no pueden contradecirse.
+Dos formas de mandar lo mismo, escritas una vez. La barra y sus desplegables no
+tienen ninguna orden propia: cada botón **es** la tecla que hace lo mismo
+(`TUI/tools.c:11-39`, y el clic que manda esa tecla en `TUI/keys.c:469-505`),
+así que no pueden contradecirse.
 
 ## Teclas
 
@@ -40,7 +41,7 @@ se mueve.
 | `Ctrl+C` `Ctrl+V` | 3 / 22 | copia / pega **el texto** mientras se edita |
 | `Ctrl+Z` `Ctrl+Y` | 26 / 25 | deshace / rehace también mientras se edita |
 | `Ctrl+B` `Ctrl+U` `Ctrl+O` | 2 / 21 / 15 | el formato de la celda, también mientras se edita |
-| `Ctrl+K` | 11 | pone o quita la fila de las herramientas |
+| `Ctrl+K` | 11 | pone o quita la barra de las herramientas |
 
 ### Vaciar y mirar
 
@@ -50,7 +51,7 @@ se mueve.
 | `v` | alterna valores y fuentes | ninguno |
 | `]` y `[` | celda más ancha o más estrecha (de 2 a 40) | la barra lo muestra (`8x2`) |
 | `}` y `{` | celda más alta o más baja (de 1 a 8) | ídem |
-| `Ctrl+T` | el siguiente tema de colores | el nombre del tema |
+| `Ctrl+T` | abre la ventana de los temas: cada nombre escrito con su propio tema | el nombre del tema |
 
 ### Formato de la celda
 
@@ -79,6 +80,8 @@ los colores propios: se ponen en el documento, ver [temas-y-formatos.md](temas-y
 | Tecla | Qué hace | Mensaje |
 |---|---|---|
 | `Ctrl+S` | guarda el **documento** `.clex` | `saved`, `no file to save`, `cannot write file` |
+| `Ctrl+G` | ventana flotante con un campo: guardar con otro nombre | `saved <nombre>`, `nothing to write`, `cannot write file` |
+| `Ctrl+Q` | ventana flotante con un campo: abrir otro archivo | `opened <nombre>`, `new sheet: saves as <ruta>`, `cannot open file`, y con cambios `unsaved changes: Ctrl+S before opening` |
 | `Ctrl+E` | exporta como **guion** `.cle` la hoja que se ve | `exported <ruta>`, `nothing to export`, `the name does not fit`, `cannot write the script` |
 | `Ctrl+L` | vuelve a leer el archivo | `reloaded`, `no file to load`, y si hay cambios `unsaved changes: press Ctrl+L again to reload` |
 | `Ctrl+R` | evalúa la hoja | `script executed`, o el aviso del fallo |
@@ -88,7 +91,12 @@ Al abrir, lo que dice la barra depende de lo que era el archivo:
 `imported: saves as <ruta>` si se abrió un `.cle` (guardará al lado como `.clex`),
 `file loaded` si era un `.clex`, `loaded (N lines ignored)` si tenía líneas que no
 eran celdas, `cannot open file` si no se pudo leer, y `new sheet` si el archivo no
-existía.
+existía. `Ctrl+Q` hace lo mismo con el archivo que se escriba en la ventana, y se
+queda en ese sitio para los `Ctrl+S` de después.
+
+Guardar con otro nombre sale con el campo **vacío** y el nombre actual en el aviso:
+escribir detras de un nombre viejo nunca dio un nombre. Abrir sale con la carpeta
+del archivo que se ve delante, para cambiar solo el nombre de lo de al lado.
 
 La confirmación de salir se cancela con cualquier otra tecla que no sea `q`, y la de
 recargar con cualquiera que no sea `Ctrl+L`.
@@ -107,58 +115,69 @@ después. Los números empiezan en uno al llegar y en cero dentro del editor.
 | cualquier celda, con el botón derecho | pone el cursor y copia: `copied A1` |
 | una raya, la cabecera de las letras, el margen de los números o las filas de abajo | nada: no son celdas |
 | una pestaña | cambia de hoja |
-| el chip `[tools]` al final de la fila de las pestañas | vuelve a poner la fila de las herramientas |
-| el nombre del archivo, al final de la barra de estado | lo mismo |
-| un botón de la fila de herramientas | manda su tecla |
-| la rueda | una fila arriba o abajo |
+| el chip `[tools]` al final de la fila de las pestañas | vuelve a poner la barra de las herramientas |
+| el nombre del archivo, al final de la barra de estado | el tirador de esa barra: la pone si no estaba y la quita si estaba |
+| una sección de la barra de herramientas | cuelga su desplegable; otra vez en la misma, lo recoge |
+| una fila de un desplegable o de una lista | la marca y manda su tecla (o pone el tema) |
+| fuera de un desplegable | lo recoge, y el clic se absorbe: no mueve el cursor de detrás |
+| fuera de una lista o de un campo | nada: son una ventana con trabajo dentro, no se cierran por error |
+| la rueda | una fila arriba o abajo, o recorrer la lista si hay una delante |
 
 Soltar el botón, o moverse sin apretar nada, no es ninguna orden. El botón del
 medio tampoco.
 
-**Clic mientras se escribe en una celda**: si el clic cae en otra parte, primero se
-termina la escritura como con `Esc` (y se recalcula) y luego hace lo que toque. Así
-no se pierde lo escrito por llevar la mano al ratón. **Clic mientras se escribe el
+**Clic mientras se escribe en una celda**: si el clic cae en otra celda de la rejilla,
+primero se termina la escritura como con `Esc` (y se recalcula) y luego se mueve el
+cursor alli. Asi no se pierde lo escrito por llevar la mano al raton. Los sitios que
+no son celdas de la rejilla —la barra de herramientas, las pestanas, el chip, el nombre
+del archivo— no terminan la escritura: hacen lo suyo, y cambiar de hoja por clic
+descarta lo que se estaba escribiendo sin recalcular. **Clic mientras se escribe el
 nombre de una hoja**: corta la escritura del nombre y la descarta, y hace lo que
 toque.
 
-## La fila de herramientas
+## La barra de las herramientas
 
-Una sola lista, en `TUI/tools.c`, de nombre y tecla; de ahí salen y el dibujo y el
-clic. Delante lo que más se usa, para que lo que no quepa en una pantalla corta sea
-lo de menos:
+Cinco secciones, cada una con sus items de nombre y tecla, en una sola tabla
+(`TUI/tools.c:11-39`); de ahí salen y el dibujo y el clic. Delante lo que más se usa
+en cada sitio, para que lo que no quepa en una pantalla corta sea lo de menos:
 
-| # | Botón | Manda | # | Botón | Manda |
-|---|---|---|---|---|---|
-| 0 | `bold` | `Ctrl+B` | 7 | `save` | `Ctrl+S` |
-| 1 | `line` | `Ctrl+U` | 8 | `hide` | `Ctrl+K` |
-| 2 | `align` | `Ctrl+O` | 9 | `run` | `Ctrl+R` |
-| 3 | `copy` | `Ctrl+C` | 10 | `value` | `v` |
-| 4 | `paste` | `Ctrl+V` | 11 | `sheet` | `Ctrl+N` |
-| 5 | `undo` | `Ctrl+Z` | 12 | `theme` | `Ctrl+T` |
-| 6 | `redo` | `Ctrl+Y` | | | |
+| Sección | Items | Teclas |
+|---|---|---|
+| `doc` | `save`, `save as`, `open`, `new sheet` | `Ctrl+S`, `Ctrl+G`, `Ctrl+Q`, `Ctrl+A` |
+| `edits` | `copy`, `paste`, `undo`, `redo` | `Ctrl+C`, `Ctrl+V`, `Ctrl+Z`, `Ctrl+Y` |
+| `style` | `bold`, `line`, `align` | `Ctrl+B`, `Ctrl+U`, `Ctrl+O` |
+| `view` | `value`, `theme` | `v`, `Ctrl+T` |
+| `run` | `run` | `Ctrl+R` |
 
-En una pantalla de ochenta columnas caben diez: hasta `run`. `value`, `sheet` y
-`theme` esperan una pantalla más ancha, y siguen alcanzables por teclado.
+En una pantalla de ochenta columnas caben las cinco; en una mas corta se caen las de
+detras, y todo sigue alcanzable por tecla.
 
-**Quitar la fila.** El botón `hide` (o `Ctrl+K`) la quita y le devuelve una fila a
-la rejilla. No cuenta como un cambio del archivo, como no lo cuenta cambiar el
-tamaño de las celdas; se guarda con el archivo la próxima vez que se guarde, en la
-línea `tools off`.
+**Quitar la barra.** La barra no lleva botón para quitarse a sí misma: por tecla es
+`Ctrl+K`, y por ratón el nombre del archivo al final de la barra de estado, que es
+un tirador en los dos sentidos —la barra estaba fuera, la pone; estaba puesta, la
+quita—. No cuenta como un cambio del archivo, como no lo cuenta cambiar el tamaño
+de las celdas: es una preferencia del usuario, y se guarda al momento en
+`$HOME/.config/celex/config`, en la línea `tools off`.
 
-**Volver a ponerla.** Quitar la fila quita el botón que la quita, así que quedan
-dos sitios visibles que tocar: el chip `[tools]` al final de la fila de las
-pestañas, que solo se pinta mientras la fila está fuera, y el nombre del archivo al
-final de la barra de estado, que está siempre. `Ctrl+K` hace lo mismo desde el
-teclado. El aviso que deja la barra es `tools off`, corto a propósito: un aviso
-largo se comería el nombre, que es justo lo que hay que ver y tocar.
+**Volver a ponerla.** Los mismos dos sitios la devuelven, y además el chip `[tools]`
+al final de la fila de las pestañas, que solo se pinta mientras la barra está fuera.
+`Ctrl+K` hace lo mismo desde el teclado. El aviso que deja la barra es `tools off`,
+corto a propósito: un aviso largo se comería el nombre, que es justo lo que hay que
+ver y tocar.
 
-## La barra de estado como menú
+**Con una ventana delante.** La tecla y el clic pasan a ser de la ventana
+(`TUI/keys.c:601`): las flechas, la rueda, `j` y `k` recorren la lista, `Enter`
+confirma y `Esc` cancela. Las teclas que no son de ella la cierran y se hacen lo de
+siempre, para no quedarse encerrado dentro; un clic fuera de un desplegable lo
+recoge sin mover nada de detrás.
 
-No hay menús desplegables ni barras laterales: lo que se puede tocar son los
-botones de la fila de herramientas, las pestañas y el nombre del archivo. Todo lo
-demás se hace con las teclas de arriba. Lo que la barra dice es el menú de
-resultados: `saved`, `copied D12`, `tools off`, `align center`, `4x2`, `VAL` o
-`SRC`, y el número de compilación con el que se está trabajando.
+## La barra de estado como aviso
+
+Lo que se puede tocar son los sitios de arriba: la barra con sus desplegables, las
+pestañas, el chip y el nombre del archivo. Lo que la barra de estado dice es el
+menú de resultados: `saved`, `copied D12`, `tools off`, `align center`, `4x2`, `VAL`
+o `SRC`, el nombre del tema que se está probando en la ventana, y el número de
+compilación con el que se está trabajando.
 
 ## Donde encaja con lo demas
 

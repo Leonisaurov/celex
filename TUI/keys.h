@@ -22,15 +22,18 @@
 #define KEY_CTRL_O 15
 #define KEY_CTRL_U 21
 #define KEY_CTRL_K 11
+#define KEY_CTRL_G 7
+#define KEY_CTRL_Q 17
 
 // Lo que el editor recuerda entre pulsaciones de teclas.
 typedef struct {
-    // El archivo que se abrio, que puede ser NULL: un guion del lenguaje o un
+    // El archivo que se abrio, que puede estar vacio: un guion del lenguaje o un
     // documento del editor.
-    const char *path;
+    char path[1024];
     // El archivo donde guarda, que es un documento del editor aunque se abrio un
-    // guion.
-    const char *savePath;
+    // guion. Con el guardar con otro nombre se puede cambiar en marcha, y por
+    // eso es un baul del editor y no un apuntar fuera.
+    char savePath[1024];
     // Si el editor sigue vivo.
     bool running;
     // Que se pidio salir y falta la confirmacion.

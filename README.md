@@ -18,7 +18,7 @@ Spanish like the code comments:
 |---|---|
 | [`docs/organizacion.md`](docs/organizacion.md) | the layers, every file, the build, the build number, the commit style |
 | [`docs/pantalla.md`](docs/pantalla.md) | the layout, the three bars, the frame, why the view slides |
-| [`docs/teclas-y-raton.md`](docs/teclas-y-raton.md) | every key, every click, the row of tools |
+| [`docs/teclas-y-raton.md`](docs/teclas-y-raton.md) | every key, every click, the bar of tools |
 | [`docs/hojas-historial-y-entrada.md`](docs/hojas-historial-y-entrada.md) | sheets, clipboard, undo, autocompletion |
 | [`docs/temas-y-formatos.md`](docs/temas-y-formatos.md) | the themes with their sequences, cell formats, the palette |
 | [`docs/archivos.md`](docs/archivos.md) | `.cle` and `.clex`: the whole grammar, loading, saving, what is lost |
@@ -66,9 +66,12 @@ Inside `TUI/` the editor is in pieces, each one with its own job:
 | `TUI/cell_manager.c` | the sheet, the drawing and the history            |
 | `TUI/clipboard.c`    | the clipboard of the editor, and the one of the system |
 | `TUI/theme.c`        | the colors: what each part of the screen looks like   |
+| `TUI/paths.c`        | the config folder `$HOME/.config/celex`, and the user themes in it |
+| `TUI/preferences.c`  | the preferences of the user: theme, cell size, tools bar, values view |
 | `TUI/complete.c`     | the words the tab key can complete                   |
 | `TUI/document.c`     | the `.clex` file: the structure of the document       |
-| `TUI/tools.c`        | the row of tools, and the key behind each button    |
+| `TUI/tools.c`        | the sections of the tool bar, and the key behind each option |
+| `TUI/popup.c`        | the floating window: what it is, where it sits, which row was clicked |
 | `TUI/script.c`       | runs the sheet and fills the cells with their values |
 | `TUI/file.c`         | reads and writes the `.cle` file                  |
 
@@ -99,7 +102,17 @@ make run-script  # runs sample.cle and prints the values of the cells
 and leaves `sample.cle` as it was. Opening that `.clex` is how the editor is
 normally started after that: `build/celex sample.clex`.
 
-`make clean` removes the binaries.
+`make clean` throws away the whole `build` directory.
+
+### Build on POSIX
+
+The `make` build above is the POSIX one: it uses `gcc` and, for the editor, the
+`#ifndef _WIN32` branch of `TUI/tui_platform.c` and `TUI/paths.c` — `termios` for
+the terminal and the config folder at `$HOME/.config/celex`. It is meant for
+Linux and macOS; **on this Windows machine the POSIX branch is run and tested
+through WSL (Windows Subsystem for Linux)**, which is a real Linux, so `make`,
+`make test` and the truecolor themes read from `~/.config/celex/themes` all
+behave as they do on any other Linux.
 
 ### Build on Windows
 
@@ -112,7 +125,7 @@ On Windows the build uses MSVC, from *Visual Studio Build Tools*:
 ```bat
 build.bat           :: release
 build.bat debug     :: with debug symbols
-build.bat clean     :: removes the binaries
+build.bat clean     :: throws away build\
 ```
 
 It produces the same two binaries, with the `.exe` extension:
@@ -133,8 +146,8 @@ The editor puts what it copies in the clipboard of the system, so it needs
 `user32.lib` on Windows:
 
 ```bat
-cl /nologo /std:c11 /W3 /utf-8 /ITUI TUI\*.c Common\ref.c Sheet\sheet.c ^
-   Sheet\order.c Lang\*.c /link user32.lib
+cl /nologo /std:c11 /W3 /utf-8 /ICommon /ISheet /ILang /Ibuild TUI\*.c ^
+   Common\ref.c Sheet\sheet.c Sheet\order.c Lang\*.c /link user32.lib
 ```
 
 On POSIX the copy to the clipboard of the system is best effort: it uses
@@ -142,7 +155,7 @@ On POSIX the copy to the clipboard of the system is best effort: it uses
 installed, the clipboard of the editor still works.
 
 The `build` directory is shared by both systems, so `make clean` and
-`build.bat clean` remove the binaries of the two of them.
+`build.bat clean` throw away the whole `build` directory of the two of them.
 
 ## Tests
 
@@ -156,9 +169,9 @@ build.bat test     # on Windows
 ```
 
 Each case is a `.cle` file in `tests/cases` and what it should print in
-`tests/expected`. The first line of the expected file is the exit code the
-interpreter should return, and the rest is what it should print. The list
-of cases is in `tests/cases.txt`.
+`tests/expected`. The first line of the expected file says the exit code the
+interpreter should return, like `# exit: 0`, and the rest is what it should
+print. The list of cases is in `tests/cases.txt`.
 
 By default a case is checked in `--values` mode, so what is compared is the cells
 the script leaves. An expected file that says `programa` on its first line is run
@@ -234,7 +247,7 @@ the keyboard, so a slow frame is a key that answers late.
 
 ## Keys
 
-The same table with the codes and every click, plus the row of tools: [`docs/teclas-y-raton.md`](docs/teclas-y-raton.md).
+The same table with the codes and every click, plus the bar of tools: [`docs/teclas-y-raton.md`](docs/teclas-y-raton.md).
 
 | Key                | Action                                    |
 |--------------------|-------------------------------------------|
@@ -248,18 +261,20 @@ The same table with the codes and every click, plus the row of tools: [`docs/tec
 | `Home` `End`       | move the text cursor to one end or other  |
 | `Tab`              | complete the word being written            |
 | `Backspace`        | delete the character before the cursor    |
-| `Del`              | delete the character at the cursor        |
+| `Del` while editing| delete the character at the cursor        |
 | `Esc`              | leave the cell                            |
-| `x`                | clear the cell                            |
+| `x` or `Del`, not editing | clear the cell                       |
 | `v`                | show the values or the source of the cells|
 | `]` `[`            | wider or narrower cells                   |
 | `}` `{`            | taller or shorter cells                   |
 | `Ctrl+R`           | evaluate the sheet                        |
-| `Ctrl+T`           | change the colors of the editor           |
+| `Ctrl+T`           | the window of colors, each one in its own theme |
+| `Ctrl+G`           | save the document under another name      |
+| `Ctrl+Q`           | open another file                         |
 | `Ctrl+B`           | bold the cell, or un-bold it              |
 | `Ctrl+U`           | underline the cell, or take it away       |
 | `Ctrl+O`           | where the text of the cell sits            |
-| `Ctrl+K`           | hide or show the row of tools              |
+| `Ctrl+K`           | hide or show the bar of tools              |
 | `Ctrl+N` `Ctrl+P`  | the next sheet, the previous one          |
 | `Ctrl+A`           | add a sheet after the one being seen      |
 | `Ctrl+D`           | remove the sheet being seen               |
@@ -277,14 +292,18 @@ The same table with the codes and every click, plus the row of tools: [`docs/tec
 | right click        | copy that cell                             |
 | wheel              | one row up, or down                        |
 | click on a tab     | change the sheet                           |
-| click on a button  | the key of that button                     |
-| click on `[tools]` | bring the row of tools back                 |
-| click the name     | the same, from the status bar               |
+| click on a section | hangs its dropdown, and the option clicked is the key it shows |
+| click outside a dropdown | takes it back, without moving anything behind it |
+| arrows, wheel, `j` `k` while a window is up | walk the window; `Enter` picks, `Esc` leaves |
+| click on `[tools]` | bring the bar of tools back                 |
+| click the name     | the same handle: puts the bar, or takes it off if it was there |
 
-While a cell is being edited the arrows move the text cursor inside it,
-and the cell under the cursor is the one that shows where the text goes.
-If the content does not fit in the cell, the part that is shown is the one
-where the cursor is, and the bar shows the whole text being written.
+While a cell is being edited the left and right arrows move the text cursor
+inside it, and the cell under the cursor is the one that shows where the text
+goes. The up and down arrows finish the edit and move to the cell above or
+below, as `Esc` does. If the content does not fit in the cell, the part that is
+shown is the one where the cursor is, and the bar shows the whole text being
+written.
 
 `Tab` completes the word under way: the words of the language (`print`, `if`,
 `while`, `true`...) and the words already written in the sheet — the references
@@ -329,29 +348,49 @@ source instead of its value, so the formula of that cell is always visible.
 The sheet slides instead of jumping. The view moves by characters and not by
 whole cells, so when the cursor reaches an edge the cells are cut in half at the
 other side — the next column is already peeking in, and the one left behind is
-still partly there. A move that pans the view is drawn in two frames in between,
-a few milliseconds apart, so the grid is seen gliding over those cut cells. A
-jump that is too big (many columns at once) is drawn in one frame, because
-animating it would leave the editor behind the keys.
+still partly there. A move that pans the view is drawn in one or two frames in
+between, a few milliseconds apart — one when it slides two cells, two when it
+slides three or more — so the grid is seen gliding over those cut cells. A
+single-cell move needs no frames in between, and a jump that is too big (more
+than eight cells at once) is drawn in one frame as well, because animating it
+would leave the editor behind the keys.
 
 The size of the cells is not fixed: `]` and `[` make a cell wider or narrower,
 `}` and `{` make it taller or shorter, and the bar says what they are with
 `7x5`. A wider cell shows a formula that would otherwise wrap, a narrower one
 puts more of the sheet on the screen. The two sizes have limits — from two
 columns to forty, from one row to eight — so a cell can never be bigger than
-the screen nor too small to read.
+the screen nor too small to read. The size is a preference of the user: it is
+remembered for the next time, whatever file is opened.
 
-`Ctrl+T` goes to the next set of colors, and the bar says which one is on.
-There are three: the one the editor always had, which is the terminal's own
-colors with the selected cell turned around; `oscuro`, for a dark terminal, with
-the grid in gray so it does not weigh, the values in yellow to tell them apart
-from the source, and the selected cell on blue; and `claro`, for a light
-terminal, with the same parts in colors that read on white.
+`Ctrl+T` opens a floating window with every set of colors, each name written with
+its own theme, so the window is the preview: the arrows, the wheel, `j` and `k`
+move the choice and put that theme on the whole screen at once, `Enter` keeps it,
+`Escape` puts back the one that was there. The bar says which one is on while it
+is being tried, because the bar does not show the theme otherwise. The one that
+is kept is remembered for the next time, in `$HOME/.config/celex/config`. There are five: the one the editor always had, which is the terminal's own
+colors with the selected cell and the two bars turned around; `oscuro`, for a
+dark terminal, with the grid in gray so it does not weigh, the values in yellow
+to tell them apart from the source, and the selected cell on blue; `claro`, for
+a light terminal, with the same parts in colors that read on white; and two in
+truecolor that also paint the background over the whole screen — `rose-pine` and
+`catppuccin`, which want a terminal that understands 24-bit color, such as
+Windows Terminal.
+
+You can write your own. The editor reads every `*.theme` file in
+`$HOME/.config/celex/themes` at startup and puts them after the five above, so
+they show up in the `Ctrl+T` window and the `theme` line of the preferences file
+can name them.
+The folder is created on first run with a commented `_ejemplo.theme` template to
+edit; the leading underscore keeps it out of the window until you rename it. A
+theme file is one line per part of the screen, `<part> <#fg> [on <#bg>]
+[bold|underline|reverse]` in hex, with `#` comments and an optional `name`.
+Everything is spelled out in [docs/temas-y-formatos.md](docs/temas-y-formatos.md).
 
 What is colored is the grid, the column letters and the row numbers, the source
 of a cell, the value of a cell, the selected cell, the dashed border of the
-copied one, the status bar, and what the bar says — which is red when something
-failed, so an error is seen without reading it.
+copied one, the bar of tools, the status bar, and what the bar says — which is
+red when something failed, so an error is seen without reading it.
 
 The colors of a cell are part of the frame: every cell of the screen keeps the
 style it is drawn with, and only the cells whose character or style changed are
@@ -377,22 +416,30 @@ palette, from 1 to 16, where not putting one is the color of the theme. A cell
 with no format has no line. A format on an empty cell is allowed, so a table can
 be colored before it is filled.
 
-There is a row of tools above the tabs, with the names of what they do: `tools:
-bold line align copy paste undo redo save hide ...`. A button is not a second
-way of doing something — it is the key it shows, sent by the editor when it is
-clicked, so the two ways cannot drift apart. `Ctrl+K` (or its button) takes the
-row away and gives its line back to the sheet, and the file remembers which of
-the two it was:
+There is a bar of tools above the grid, split into sections with the names of what
+they hold: `doc  edits  style  view  run`. Clicking a section hangs a window over
+the grid with its options, each one written with the key behind it — `bold ^B`,
+`save as ^G`. A button is not a second way of doing something: it is the key it
+shows, sent by the editor when it is clicked, so the two ways cannot drift apart.
+`Ctrl+K` takes the bar away and gives its line back to the sheet. Whether the bar
+is there is a preference of the user, remembered in the config file:
 
 ```
 tools off
 ```
 
-What fits is what is drawn: in eighty columns the row shows ten buttons and the
-rest wait for a wider window, like the tabs do.
+What fits is what is drawn: on a short screen the sections at the back fall off,
+like the tabs do, and everything stays reachable by key.
 
-Taken away, the row leaves two ways back: a `[tools]` chip at the end of the tab
-row, which is only drawn while the row is away, and the name of the file at the
+The same windows carry the things that need more than a button: the list of the
+themes, each name painted with its own theme and tried on the spot while the
+choice moves (`Ctrl+T`), and a field for a name of a file — save under another
+name (`Ctrl+G`) and open another file (`Ctrl+Q`). `Enter` writes or reads, `Esc`
+leaves. A name typed in one of those fields is of the run, not of the sheet: the
+document does not remember windows.
+
+Taken away, the bar leaves two ways back: a `[tools]` chip at the end of the tab
+row, which is only drawn while the bar is away, and the name of the file at the
 end of the status bar, which is always there. `Ctrl+K` is the same switch from the
 keyboard. The bar says `tools off` when it goes away — short on purpose, because a
 longer note would push the file name off the bar, and that is the thing to click.
@@ -417,7 +464,9 @@ go around the list, `Ctrl+D` takes the one being seen away — the last sheet is
 never taken, because a file without sheets is not a file — and `Ctrl+F` writes a
 name in the tab, with `Enter` to set it and `Esc` to leave it. Names are not
 repeated: a sheet is never given a name another one already has, and a new sheet
-takes the first free number.
+takes `SheetN`, with `N` starting one past the number of sheets there are and
+counting up to the first name not taken yet — so after renaming, holes can be
+left in the series.
 
 Each sheet keeps its own cells, its own cursor, its own slide of the view and its
 own undo history, so going back to a sheet finds it as it was left. Copying is
@@ -468,10 +517,11 @@ different keys in less than 10 ms, and the editor only calls a burst a paste
 when the characters are not all the same, because a key that is held down
 repeats the same character.
 
-The console of Windows has its own way of sending the keys with `Ctrl`, the
-*win32-input-mode* (`CSI Vk ; Sc ; Uc ; Kd ; Cs ; Rc _`). The editor
-understands it, and it also understands the plain control codes, so it works
-the same in the Windows Terminal, in the old console and in a terminal of
+On Windows the keys do not arrive as escape sequences at all: the console of
+Win32 hands over key events, and `TUI/tui_platform.c` turns them into the same
+codes the editor uses everywhere. So a `Ctrl`+letter is known by its control
+code both in the Windows console and in a terminal of Linux, and the editor
+works the same in the Windows Terminal, in the old console and in a terminal of
 Linux.
 
 ### When it does not work
@@ -491,28 +541,23 @@ Linux.
 The whole reference, including what the language does not have: [`docs/lenguaje.md`](docs/lenguaje.md).
 
 ```
-# Una hoja: cada linea asigna el valor de una celda
 A1 = 1
 A2 = 2
 B1 = A1 + A2
 C1 = "hola"
 
-# Variables
 total = 0
 name = "celex"
 
-# Print
 print total
 print name + "!"
 
-# Condicionales
 if total > 10 {
     print "grande"
 } else {
     print "chico"
 }
 
-# Bucles
 for i in 1:5 {
     total = total + i
 }
@@ -522,10 +567,15 @@ while total < 100 {
 }
 ```
 
+The language has no comments, so no line of a real `.cle` says what it does:
+the reference of what the language has, and of what it does not have, is the
+list right below and [`docs/lenguaje.md`](docs/lenguaje.md).
+
 - **Literals**: numbers (`42`), strings (`"hola"`), booleans (`true`, `false`).
 - **Variables**: `name = expression`.
 - **Cells**: `A1 = expression`, with the usual spreadsheet reference. The
-  columns go from `A` to `ZZ` and the rows start at 1.
+  columns are one or more capital letters (`A`, `Z`, `AA`...) and the rows
+  start at 1.
 - **Operators**: `+` `-` `*` `/`, comparisons `==` `!=` `>` `<` `>=` `<=`, and
   the unary minus. `+` also joins strings.
 - **Statements**: `print`, `input`, `if`/`else`, `while`, `for`, `return`.
@@ -542,7 +592,7 @@ of the other:
 | Extension | What it is                                                                        |
 |-----------|-----------------------------------------------------------------------------------|
 | `.cle`    | Celex Script source. Hand-written, plain, and what the interpreter runs.           |
-| `.clex`   | The editor's document: sheets, the size of the cells, the colors, where you were.  |
+| `.clex`   | The editor's document: sheets, cells, formats, and where you were in each of them. |
 
 A `.cle` opens in the editor as one sheet, named after the file, and everything
 that is not a cell assignment — a `print`, an `if`, a variable — is left alone.
@@ -554,9 +604,6 @@ The `.clex` is written for the editor to read, not for editing by hand:
 
 ```
 celex-document 1
-theme oscuro
-cell-size 4 2
-tools off
 sheet "numeros"
   select E3
   scroll 15 0
@@ -578,15 +625,40 @@ end-sheet
   cell is always one line, so a cell source with quotes in it round-trips.
 - `select` and `scroll` remember which cell had the cursor and how far the view
   had slid, for every sheet.
-- `tools off` remembers that the row of tools was hidden. Without the line the
-  row is shown.
 - A line that is not understood is counted and skipped, so a file from a later
   version still opens.
 - A cell with no content has no line, like in a script.
+- The theme, the size of the cells and the bar of tools were fields of this file
+  in the first version. They are preferences of the user now, so they live in the
+  config folder; an old `.clex` that still carries them opens without a warning.
+
+### The preferences
+
+What is chosen once and holds for every file is in
+`$HOME/.config/celex/config`, next to the user themes. It is written when any of
+those things changes, so the next time the editor starts it starts the way it was
+left, no matter which file is opened:
+
+```
+celex-preferences 1
+theme oscuro
+cell-size 6 3
+tools off
+values on
+```
+
+- `theme` is the theme kept with `Ctrl+T`.
+- `cell-size` is what `]` `[` `}` `{` leave: the width and the height of a cell.
+- `tools on` or `tools off` is the bar, from `Ctrl+K` or the click on the file
+  name.
+- `values on` or `values off` is what `v` shows: the calculated values or the
+  source of the cells. Without the line, the source is what is shown.
+- A line that is not understood is skipped, so the file can be edited by hand and
+  a field from a later version does not break the others.
 
 A `.cle`, which is what `Ctrl+E` writes, is one line per cell — the reference,
-`=`, and the source of the cell — with the cells sorted by column and then by row,
-so a cell comes after the cells it uses:
+`=`, and the source of the cell — with the cells sorted by column and then by
+row, a stable order that is not necessarily the order of the dependencies:
 
 ```
 A1 = 1
@@ -603,9 +675,10 @@ C1 = "hola"
 - An assignment can be left without a value, `D1 =`, and then the cell is
   empty. The editor does not write those cells when it saves: a cell with
   no content does not need a line in the file.
-- Cells are written back sorted by column and then by row. The language has
-  no forward references, so the order matters: a cell is written after the
-  cells it uses, and so it can be evaluated on its own.
+- Cells are written back sorted by column and then by row. That order does not
+  have to respect the dependencies: when the file is evaluated the sheet layer
+  puts the cell assignments in the order they can be computed in, no matter how
+  they were written (see [Evaluating the sheet](#evaluating-the-sheet)).
 - The language has no comment syntax, so the editor never writes comments.
   Lines that are not cell assignments are ignored when loading and the
   status bar warns about them.

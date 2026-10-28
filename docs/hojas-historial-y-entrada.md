@@ -17,7 +17,7 @@ Un archivo tiene hojas, y cada hoja es una hoja de cálculo entera por su cuenta
 **Es de la pantalla, y no de una hoja** (`CellManager`): lo que se está viendo, el
 tamaño de la terminal, si se muestran valores o fuentes, el mensaje de la barra, el
 portapapeles, lo que ofrece el tabulador, si se está escribiendo un nombre de hoja,
-y si la fila de herramientas está puesta.
+y si la barra de herramientas está puesta.
 
 | Tecla | Qué hace | Lo que dice la barra |
 |---|---|---|
@@ -30,8 +30,9 @@ y si la fila de herramientas está puesta.
 **Nombres.** Hasta 23 caracteres (el sitio mide 24 con el final de cadena) y no se
 repiten: una hoja no recibe un nombre que ya tiene otra, y `sheet_rename` no hace
 nada si el nombre está tomado — se queda como estaba, sin avisar. Si se crea una
-hoja sin nombre se pone el primero libre de la serie `Sheet1`, `Sheet2`, `Sheet3`,
-saltando los que ya estén usados.
+hoja sin nombre se pone `SheetN`, empezando N por el número de hojas que haya más
+uno y contando hacia arriba hasta dar con un nombre libre — no por el primero
+libre de la serie, así que tras renombrar pueden quedar huecos.
 
 **Al quitar una hoja** las de detrás corren un puesto, y la que se está viendo se
 mueve con ellas: si se quitó una de delante, baja uno; si la que se veía desaparece,
@@ -118,9 +119,9 @@ Cómo se recorre:
   lo que estaba escrito y la oferta se apaga.
 
 Mientras hay oferta, la barra de estado la enseña: las candidatas separadas por
-espacios, y la que está puesta ahora entre llaves. Escrito `pr` con dos candidatas
-(`print` y `prueba`), la barra dice ` print  prueba` y luego, al pasar,
-` {print}  prueba`. La oferta tiene prioridad sobre el mensaje y sobre el valor de
+un espacio, y la que está puesta ahora entre llaves. Escrito `pr` con dos candidatas
+(`print` y `prueba`), la barra dice ` print prueba` y luego, al pasar,
+` {print} prueba`. La oferta tiene prioridad sobre el mensaje y sobre el valor de
 la celda, porque es lo que se está eligiendo.
 
 Se apaga al escribir, al borrar, al empezar a editar y al cambiar de hoja: la

@@ -45,18 +45,24 @@ void sheet_select(CellManager *manager, int index);
 #define STATUS_HEIGHT 1
 // Las hojas tambien tienen su fila, encima de la barra de estado.
 #define SHEET_BAR_HEIGHT 1
-// Y las herramientas la suya, encima de las hojas, cuando estan puestas.
-#define TOOLS_HEIGHT 1
+// Y las herramientas la suya, arriba de todo, cuando estan puestas. Las letras
+// de las columnas bajan una fila con la barra, y la cabecera mide entonces dos.
+#define MENU_HEIGHT 1
 
-// Las filas de abajo. La rejilla acaba donde empieza lo demas: la fila de las
-// herramientas, la de las pestanas y la de estado. Escondiendo las herramientas
-// la rejilla gana una fila.
-int grid_bottom(const CellManager *manager, int height) {
-    return height - STATUS_HEIGHT - SHEET_BAR_HEIGHT - (manager->showTools ? TOOLS_HEIGHT : 0);
+int menu_row(void) {
+    return 0;
 }
 
-int tools_row(const CellManager *manager, int height) {
-    return grid_bottom(manager, height);
+// Cuanto mide el margen de arriba: las letras de las columnas, y la barra de
+// las herramientas cuando esta puesta encima.
+static int header_height(const CellManager *manager) {
+    return HEADER_HEIGHT + (manager->showMenu ? MENU_HEIGHT : 0);
+}
+
+// Las filas de abajo. La rejilla acaba donde empieza lo demas: la fila de las
+// pestanas y la de estado. Escondiendo la barra la rejilla gana una fila.
+int grid_bottom(const CellManager *manager, int height) {
+    return height - STATUS_HEIGHT - SHEET_BAR_HEIGHT;
 }
 
 int sheet_row(int height) {
@@ -874,10 +880,6 @@ static SheetState new_sheet_state(void) {
     return state;
 }
 
-Sheet *current_sheet(CellManager *manager) {
-    return &manager->sheets[manager->active];
-}
-
 // La hoja numero index, para mirar su nombre o su estado sin estar viendola.
 Sheet *sheet_at(CellManager *manager, int index) {
     if (index < 0 || (size_t) index >= manager->sheetCount) {
@@ -1112,7 +1114,7 @@ CellManager new_cell_manager(TermSize size) {
     manager.sheets = (Sheet *) calloc(manager.sheetCapacity, sizeof(Sheet));
     manager.sheetCount = 1;
     manager.active = 0;
-    manager.showTools = true;
+    manager.showMenu = true;
 
     strcpy(manager.sheets[0].name, "Sheet1");
     manager.sheets[0].state = new_sheet_state();
@@ -1401,10 +1403,10 @@ int status_path_at(int x) {
     return path_first >= 0 && x >= path_first && x < path_last;
 }
 
-// La fila de las herramientas se quita con el Ctrl+K y con su boton, pero el boton
-// se quita con la fila: lo que queda para volver a ponerla es el nombre del
-// archivo de la barra de estado y este chip de la fila de las pestanas, que solo
-// se ve cuando la fila esta quitada.
+// La barra de las herramientas se quita con el Ctrl+K y con un clic en su nombre,
+// pero el nombre se quita con la barra: lo que queda para volver a ponerla es el
+// nombre del archivo de la barra de estado y este chip de la fila de las pestanas,
+// que solo se ve cuando la barra esta quitada.
 #define TOOLS_CHIP "[tools]"
 
 // En que columna de la fila de las pestanas empieza el chip. Deja una de aire al
@@ -1417,11 +1419,6 @@ int tools_chip_column(int width) {
 static char previous_sheets[MESSAGE_SIZE * 4];
 static int previous_sheets_active = -1;
 static bool previous_sheets_ready = false;
-
-// El ultimo ancho con el que se pintaron las herramientas: la fila solo depende
-// del ancho, asi que con el mismo no se vuelve a escribir. -1 cuando no esta
-// puesta, para que al volver a ponerla se pinte.
-static int previous_tools_width = -1;
 
 // Cambia el tamano de las celdas, con los limites puestos.
 void set_cell_size(int width, int height) {
@@ -1466,7 +1463,7 @@ static void draw_copied_cell(CellManager *manager, char *buffer, int width, int 
     clipboard_cell(&manager->clipboard, &cellX, &cellY);
 
     int left = HEADER_WIDTH + (int) cellX * STRIDE_X - SHEET->originX;
-    int top = HEADER_HEIGHT + (int) cellY * STRIDE_Y - SHEET->originY;
+    int top = header_height(manager) + (int) cellY * STRIDE_Y - SHEET->originY;
     int right = left + CELL_SIZE_X;
     int bottom = top + CELL_SIZE_Y;
 
@@ -1483,6 +1480,207 @@ static void draw_copied_cell(CellManager *manager, char *buffer, int width, int 
     }
 }
 
+// Pinta la barra de las herramientas entera en el fotograma, con su color de
+// fondo de lado a lado: la fila va antes que la rejilla, y si luego no esta
+// puesta, la rejilla la pinta encima.
+static void paint_bar(CellManager *manager, char *buffer, int width, int height) {
+    if (!manager->showMenu) {
+        return;
+    }
+
+    int y = menu_row();
+
+    for (int x = 0; x < width; x++) {
+        put_blank(buffer, width, height, x, y, STYLE_TOOLS);
+    }
+
+    int starts[MENU_LIMIT];
+    int fitted = menu_fit(width, starts);
+
+    for (int i = 0; i < fitted; i++) {
+        MenuSection section = menu_at(i);
+        const char *label = section.label;
+        int x = starts[i];
+
+        // La seccion con el desplegable puesto se marca: es lo que dice donde
+        // mira el popup sin mover la mano del raton.
+        bool open = manager->popup.active &&
+            manager->popup.kind == POPUP_MENU &&
+            manager->popup.section == i;
+
+        while (*label != '\0') {
+            size_t size = utf8_size(label);
+
+            put_char(buffer, width, height, x, y, label, size, open ? STYLE_CURSOR : STYLE_TOOLS);
+
+            x++;
+            label += size;
+        }
+    }
+}
+
+// Escribe un texto dentro del popup, caracter a caracter, y devuelve la columna
+// seguinte a lo escrito. Lo que no cabe en la fila se corta, como en la rejilla.
+static int popup_put_text(char *buffer, int width, int height, int x, int y, const char *text, int style, int until) {
+    while (*text != '\0' && x < until) {
+        size_t size = utf8_size(text);
+
+        put_char(buffer, width, height, x, y, text, size, style);
+
+        x++;
+        text += size;
+    }
+
+    return x;
+}
+
+// La ventana flotante, dentro del fotograma. El marco va con el estilo de la
+// rejilla y el fondo con el del fuente, para que el popup se lea como un trozo
+// de la propia hoja; lo unico que destaca es la fila elegida.
+static void paint_popup(CellManager *manager, char *buffer, int width, int height) {
+    Popup *popup = &manager->popup;
+
+    if (!popup->active) {
+        return;
+    }
+
+    // La pantalla puede haber cambiado de tamano detras: la ventana se recoloca
+    // en su propio sitio antes de pintarse, y no se queda fuera.
+    popup_place(popup, width, grid_bottom(manager, height));
+
+    if (!popup->active) {
+        return;
+    }
+
+    int x = popup->x;
+    int y = popup->y;
+    int w = popup->w;
+    int h = popup->h;
+    int right = x + w - 1;
+    int bottom = y + h - 1;
+
+    if (w < 3 || h < 3) {
+        return;
+    }
+
+    for (int column = x + 1; column < right; column++) {
+        put_box(buffer, width, height, column, y, BOX_H, STYLE_GRID);
+        put_box(buffer, width, height, column, bottom, BOX_H, STYLE_GRID);
+    }
+
+    put_box(buffer, width, height, x, y, "\xE2\x94\x8C", STYLE_GRID);
+    put_box(buffer, width, height, right, y, "\xE2\x94\x90", STYLE_GRID);
+    put_box(buffer, width, height, x, bottom, "\xE2\x94\x94", STYLE_GRID);
+    put_box(buffer, width, height, right, bottom, "\xE2\x94\x98", STYLE_GRID);
+
+    for (int row = y + 1; row < bottom; row++) {
+        put_box(buffer, width, height, x, row, BOX_V, STYLE_GRID);
+        put_box(buffer, width, height, right, row, BOX_V, STYLE_GRID);
+
+        for (int column = x + 1; column < right; column++) {
+            put_blank(buffer, width, height, column, row, STYLE_TEXT);
+        }
+    }
+
+    const char *title = NULL;
+
+    if (popup->target == POP_TARGET_THEME) {
+        title = "themes";
+    } else if (popup->kind == POPUP_MENU) {
+        MenuSection section = menu_at(popup->section);
+
+        title = section.label;
+    } else if (popup->target == POP_TARGET_SAVE_AS) {
+        title = "save as";
+    } else if (popup->target == POP_TARGET_OPEN) {
+        title = "open";
+    }
+
+    if (title != NULL) {
+        popup_put_text(buffer, width, height, x + 2, y + 1, title, STYLE_HEADER, right);
+    }
+
+    if (popup->kind == POPUP_INPUT) {
+        // El campo: el texto se recorta por delante cuando crece mas que la
+        // caja, y el hueco del cursor se queda sin estilo, como en la rejilla.
+        const char *text = popup->text;
+        size_t length = strlen(text);
+        int room = w - 4;
+        int chars = 0;
+
+        for (size_t i = 0; i < length; i += utf8_size(text + i)) {
+            chars++;
+        }
+
+        size_t from = 0;
+        int skip = chars > room ? chars - room : 0;
+
+        for (int i = 0; i < skip && text[from] != '\0'; i++) {
+            from += utf8_size(text + from);
+        }
+
+        int column = popup_put_text(buffer, width, height, x + 2, y + 2, text + from, STYLE_MESSAGE, right);
+
+        int cursor = chars - skip;
+
+        if (cursor > room) {
+            cursor = room;
+        }
+
+        if (x + 2 + cursor < right) {
+            char *cell = cell_at(buffer, width, x + 2 + cursor, y + 2);
+
+            cell[GLYPH_BYTES] = (char) (unsigned char) STYLE_NONE;
+        }
+
+        return;
+    }
+
+    int rows = h - 3;
+
+    if (rows > popup->count) {
+        rows = popup->count;
+    }
+
+    int hints = popup->hintWidth;
+    int text_right = right - 2 - hints;
+
+    for (int i = 0; i < rows; i++) {
+        int row = y + 2 + i;
+
+        // La fila elegida lleva el bloque de la seleccion, como la celda del
+        // cursor: la vista ya sabe leer ese estilo.
+        if (i == popup->selected) {
+            for (int column = x + 1; column < right; column++) {
+                put_blank(buffer, width, height, column, row, STYLE_CURSOR);
+            }
+
+            put_char(buffer, width, height, x + 1, row, ">", 1, STYLE_CURSOR);
+        } else {
+            put_char(buffer, width, height, x + 1, row, " ", 1, STYLE_TEXT);
+        }
+
+        int style = STYLE_TEXT;
+
+        if (popup->target == POP_TARGET_THEME) {
+            // Cada tema escrito con su propio tema: asi el popup se mira y no
+            // hace falta probarlos de uno en uno.
+            style = style_custom(theme_text_sequence(i));
+        }
+
+        popup_put_text(buffer, width, height, x + 3, row, popup->labels[i], style, text_right);
+
+        if (hints > 0) {
+            const char *hint = menu_hint(popup->keys[i]);
+            int column = right - 1 - (int) strlen(hint);
+
+            if (column >= text_right) {
+                popup_put_text(buffer, width, height, column, row, hint, STYLE_GRID, right);
+            }
+        }
+    }
+}
+
 // Pinta la rejilla desde el origen de la vista que tenga el gestor ahora
 // mismo. Se puede llamar varias veces por tecla, con origenes intermedios,
 // para que el desplazamiento se vea como un deslizamiento.
@@ -1493,10 +1691,12 @@ static void paint_grid(CellManager *manager) {
     int status_y = grid_bottom(manager, height);
 
     // Cuanto sitio tiene la rejilla en la pantalla. La ultima fila es para la
-    // barra de estado, y el margen de la izquierda y la fila de arriba son para
-    // los numeros de fila y las letras de columna.
+    // barra de estado, y el margen de la izquierda y el de arriba son para los
+    // numeros de fila, las letras de columna y la barra de las herramientas si
+    // esta puesta.
+    int headerHeight = header_height(manager);
     int viewWidth = width - HEADER_WIDTH;
-    int viewHeight = status_y - HEADER_HEIGHT;
+    int viewHeight = status_y - headerHeight;
 
     if (viewWidth < STRIDE_X) viewWidth = STRIDE_X;
     if (viewHeight < STRIDE_Y) viewHeight = STRIDE_Y;
@@ -1537,16 +1737,16 @@ static void paint_grid(CellManager *manager) {
 
         if (x < HEADER_WIDTH) continue;
 
-        for (int y = HEADER_HEIGHT; y < status_y; y++) {
+        for (int y = headerHeight; y < status_y; y++) {
             put_box(buffer, width, height, x, y, BOX_V, STYLE_GRID);
         }
     }
 
     // Las rayas horizontales, una por borde de fila.
     for (int row = firstRow; row <= lastRow; row++) {
-        int y = HEADER_HEIGHT + row * STRIDE_Y - SHEET->originY;
+        int y = headerHeight + row * STRIDE_Y - SHEET->originY;
 
-        if (y < HEADER_HEIGHT || y >= status_y) continue;
+        if (y < headerHeight || y >= status_y) continue;
 
         for (int x = HEADER_WIDTH; x < width; x++) {
             put_box(buffer, width, height, x, y, BOX_H, STYLE_GRID);
@@ -1560,7 +1760,7 @@ static void paint_grid(CellManager *manager) {
         if (x < HEADER_WIDTH) continue;
 
         for (int row = firstRow; row <= lastRow; row++) {
-            int y = HEADER_HEIGHT + row * STRIDE_Y - SHEET->originY;
+            int y = headerHeight + row * STRIDE_Y - SHEET->originY;
 
             put_box(buffer, width, height, x, y, BOX_CR, STYLE_GRID);
         }
@@ -1573,7 +1773,7 @@ static void paint_grid(CellManager *manager) {
     // lo que se ve dentro es un espacio con el estilo de la seleccion cuando la
     // celda esta vacia, que es como se nota que esa es.
     int highlight_x = HEADER_WIDTH + (int) SHEET->cursor.x * STRIDE_X + 1 - SHEET->originX;
-    int highlight_y = HEADER_HEIGHT + (int) SHEET->cursor.y * STRIDE_Y + 1 - SHEET->originY;
+    int highlight_y = headerHeight + (int) SHEET->cursor.y * STRIDE_Y + 1 - SHEET->originY;
 
     for (int row = 0; row < CELL_SIZE_Y; row++) {
         for (int column = 0; column < CELL_SIZE_X; column++) {
@@ -1592,7 +1792,7 @@ static void paint_grid(CellManager *manager) {
             // numeros de fila.
             if (x < HEADER_WIDTH) continue;
 
-            put_char(buffer, width, height, x, HEADER_HEIGHT - 1, name + i, 1, STYLE_HEADER);
+            put_char(buffer, width, height, x, headerHeight - 1, name + i, 1, STYLE_HEADER);
         }
         free(name);
     }
@@ -1602,11 +1802,11 @@ static void paint_grid(CellManager *manager) {
         sprintf(label, "%u", (unsigned int) (row + 1));
         int length = (int) strlen(label);
 
-        int y = HEADER_HEIGHT + row * STRIDE_Y + 1 - SHEET->originY;
+        int y = headerHeight + row * STRIDE_Y + 1 - SHEET->originY;
 
         // El numero se queda arriba en cuanto asoma la fila, para que se pueda
         // leer aunque la celda este cortada.
-        if (y < HEADER_HEIGHT) y = HEADER_HEIGHT;
+        if (y < headerHeight) y = headerHeight;
         if (y >= status_y) continue;
 
         for (int i = 0; i < length; i++) {
@@ -1660,14 +1860,10 @@ static void paint_grid(CellManager *manager) {
                 continue;
             }
 
-            if (content[0] == '\0') {
-                continue;
-            }
-
             // Donde empieza el contenido de la celda en la pantalla. Puede
             // estar cortado por el borde de la ventana.
             int base_x = HEADER_WIDTH + column * STRIDE_X + 1 - SHEET->originX;
-            int base_y = HEADER_HEIGHT + row * STRIDE_Y + 1 - SHEET->originY;
+            int base_y = headerHeight + row * STRIDE_Y + 1 - SHEET->originY;
 
             // Si el texto no cabe, se ve la parte donde esta el cursor. Lo que
             // cabe en la celda se mira como un numero sin signo, que es lo que
@@ -1731,7 +1927,7 @@ static void paint_grid(CellManager *manager) {
 
                 // Lo que se sale por arriba o por la izquierda se corta: el
                 // margen y la fila de las letras no se pisan.
-                if (px >= HEADER_WIDTH && py >= HEADER_HEIGHT) {
+                if (px >= HEADER_WIDTH && py >= headerHeight) {
                     put_char(buffer, width, height, px, py, content + index, size, style);
                 }
 
@@ -1768,6 +1964,12 @@ static void paint_grid(CellManager *manager) {
         cell[GLYPH_BYTES] = (char) (unsigned char) STYLE_NONE;
     }
 
+    // La barra y la ventana se componen en el propio fotograma, y no a stdout como
+    // las barras de abajo: asi el redibujado por diferencias los alcanza igual que a
+    // la rejilla, y la ventana puede tapar celdas sin romper nada.
+    paint_bar(manager, buffer, width, height);
+    paint_popup(manager, buffer, width, height);
+
     // Cuando cambia el tamano de la terminal hay que redibujar todo.
     bool full = !previous_ready || previous_width != width || previous_height != height;
 
@@ -1779,7 +1981,6 @@ static void paint_grid(CellManager *manager) {
         // que redibujar.
         previous_status_ready = false;
         previous_sheets_ready = false;
-        previous_tools_width = -1;
     }
 
     for (int y = 0; y < status_y; y++) {
@@ -1836,10 +2037,6 @@ void invalidate_screen(void) {
     free_previous();
     previous_status_ready = false;
     previous_sheets_ready = false;
-
-    // Las herramientas llevan colores del tema en su propia fila, asi que con un
-    // tema nuevo se vuelven a escribir.
-    previous_tools_width = -1;
 }
 
 // Cuantos fotogramas se pintan en medio de un desplazamiento, y cuanto se
@@ -1903,7 +2100,7 @@ static void pan_view(CellManager *manager, int *dx, int *dy) {
     int height = manager->size.y < 6 ? 6 : manager->size.y;
 
     int viewWidth = width - HEADER_WIDTH;
-    int viewHeight = grid_bottom(manager, height) - HEADER_HEIGHT;
+    int viewHeight = grid_bottom(manager, height) - header_height(manager);
 
     if (viewWidth < STRIDE_X) viewWidth = STRIDE_X;
     if (viewHeight < STRIDE_Y) viewHeight = STRIDE_Y;
@@ -1988,14 +2185,16 @@ int cell_at_screen(CellManager *manager, int x, int y, unsigned int *cellX, unsi
 
     // El margen de la izquierda, la cabecera de arriba y las filas de abajo no
     // son celdas: el desplazamiento de la vista no cuenta con ellos.
-    if (x < HEADER_WIDTH || y < HEADER_HEIGHT || y >= grid_bottom(manager, height)) {
+    int top = header_height(manager);
+
+    if (x < HEADER_WIDTH || y < top || y >= grid_bottom(manager, height)) {
         return 0;
     }
 
     // La primera columna de una celda esta detras del separador, y lo mismo pasa
     // con las filas: se resta ese separador antes de repartir.
     int column = x - HEADER_WIDTH + SHEET->originX - 1;
-    int row = y - HEADER_HEIGHT + SHEET->originY - 1;
+    int row = y - top + SHEET->originY - 1;
 
     if (column < 0 || row < 0) {
         return 0;
@@ -2124,11 +2323,11 @@ void print_sheets(CellManager *manager) {
         snprintf(joined + length, sizeof(joined) - length, "|*%s", manager->renameText);
     }
 
-    if (!manager->showTools) {
+    if (!manager->showMenu) {
         size_t length = strlen(joined);
 
-        // El chip de la fila quitada cambia la linea: si no, no se volveria a
-        // pintar cuando se esconde la fila.
+        // El chip de la barra quitada cambia la linea: si no, no se volveria a
+        // pintar cuando se esconde la barra.
         snprintf(joined + length, sizeof(joined) - length, "|%s", TOOLS_CHIP);
     }
 
@@ -2206,10 +2405,10 @@ void print_sheets(CellManager *manager) {
         fputc(' ', stdout);
     }
 
-    // Con la fila de las herramientas quitada, se escribe el chip al final: es lo
+    // Con la barra de las herramientas quitada, se escribe el chip al final: es lo
     // que se ve para volver a traerla. Encima de lo que hubiera, porque con muchas
     // pestanas la fila puede estar llena.
-    if (!manager->showTools) {
+    if (!manager->showMenu) {
         move_cursor((uint16_t) tools_chip_column(width), (uint16_t) y);
         fputs(style_sequence(STYLE_HEADER), stdout);
         fputs(TOOLS_CHIP, stdout);
@@ -2223,70 +2422,6 @@ void print_sheets(CellManager *manager) {
     flush();
 }
 
-// Las herramientas, en su fila, encima de las pestañas. Cada boton es una tecla
-// escrita: lo que se hace con un clic es lo mismo que con el teclado, y lo que no
-// cabe en el ancho de la pantalla se queda sin pintar, no cortado.
-void print_tools(CellManager *manager) {
-    int width = manager->size.x < 20 ? 20 : manager->size.x;
-    int height = manager->size.y < 6 ? 6 : manager->size.y;
-
-    if (!manager->showTools) {
-        // Sin la fila, la rejilla se la queda: se redibuja entera al cambiar, asi
-        // que aqui no hace falta escribir nada.
-        previous_tools_width = -1;
-
-        return;
-    }
-
-    if (previous_tools_width == width) {
-        return;
-    }
-
-    previous_tools_width = width;
-
-    int starts[TOOL_LIMIT];
-    int fitted = tools_fit(width, starts);
-
-    move_cursor(0, (uint16_t) tools_row(manager, height));
-
-    // El nombre de la fila, y despues los botones, uno detras de otro y donde
-    // dice tools_fit: el mismo sitio es el que se clica.
-    fputs(style_sequence(STYLE_GRID), stdout);
-    fputs(TOOLS_LABEL, stdout);
-
-    int used = tools_label_width();
-
-    for (int i = 0; i < fitted; i++) {
-        const char *name = tool_at(i).name;
-
-        while (used < starts[i]) {
-            fputc(' ', stdout);
-            used++;
-        }
-
-        // El boton es un espacio, el nombre, y otro espacio: el aire de los lados
-        // también se clica, como en cualquier boton.
-        fputs(style_sequence(STYLE_GRID), stdout);
-        fputc(' ', stdout);
-
-        fputs(style_sequence(STYLE_HEADER), stdout);
-        fputs(name, stdout);
-
-        fputs(style_sequence(STYLE_GRID), stdout);
-        fputc(' ', stdout);
-
-        used += (int) strlen(name) + 2;
-    }
-
-    // El resto de la fila, en blanco, para tapar lo que hubiera de antes.
-    fputs(style_sequence(STYLE_NONE), stdout);
-
-    for (; used < width; used++) {
-        fputc(' ', stdout);
-    }
-
-    flush();
-}
 
 static void append_text(char *status, size_t size, const char *text) {
     size_t length = strlen(status);
@@ -2375,10 +2510,10 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     char offered[MESSAGE_SIZE * 2];
     bool offering = completion_text(manager, offered, sizeof(offered)) != 0;
 
-    if (manager->message[0] != '\0') {
-        append_text(extra, sizeof(extra), manager->message);
-    } else if (offering) {
+    if (offering) {
         append_text(extra, sizeof(extra), offered);
+    } else if (manager->message[0] != '\0') {
+        append_text(extra, sizeof(extra), manager->message);
     } else if (SHEET->editing) {
         // Mientras se escribe, la barra deja ver el texto entero: en la rejilla
         // solo se ve el trozo que cabe en la celda.
@@ -2421,12 +2556,14 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
     write_columns(status, width);
 
     // Un error se pinta como un error, un aviso como un aviso, y el valor de la
-    // celda como los valores de la rejilla.
+    // celda como los valores de la rejilla. Mismo orden que el contenido.
     ScreenStyle extraStyle = STYLE_VALUE;
 
-    if (manager->message[0] != '\0') {
+    if (offering) {
+        extraStyle = STYLE_MESSAGE;
+    } else if (manager->message[0] != '\0') {
         extraStyle = manager->messageIsError ? STYLE_ERROR : STYLE_MESSAGE;
-    } else if (offering || SHEET->editing) {
+    } else if (SHEET->editing) {
         extraStyle = STYLE_MESSAGE;
     }
 
@@ -2449,7 +2586,7 @@ void print_status(CellManager *manager, const char *mode, const char *path) {
         fputs(style_sequence(STYLE_STATUS), stdout);
         write_columns(name, width - pathAt);
 
-        // Se recuerda su sitio: es el tirador de la fila de las herramientas.
+        // Se recuerda su sitio: es el tirador de la barra de las herramientas.
         path_first = pathAt;
         path_last = pathAt + pathColumns;
 

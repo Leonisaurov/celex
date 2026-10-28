@@ -13,15 +13,23 @@
 #include <string.h>
 
 #ifdef _WIN32
+#include <direct.h>
 #include <windows.h>
 #include <process.h>
 #define getpid _getpid
 #define PATH_SEP "\\"
+#define TT_MKDIR(p) _mkdir(p)
+#define TT_RMDIR(p) _rmdir(p)
+#define TEMP_FALLBACK "."
 #else
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #define PATH_SEP "/"
+#define TT_MKDIR(p) mkdir((p), 0755)
+#define TT_RMDIR(p) rmdir(p)
+#define TEMP_FALLBACK "/tmp"
 #endif
 
 static int failures = 0;
@@ -48,24 +56,104 @@ static void check_has(const char *content, const char *wanted, const char *what)
     failures++;
 }
 
-// El camino de un archivo temporal. Cada llamada devuelve un camino
-// distinto.
-static const char *temp_path(int index, const char *suffix) {
-    static char paths[3][512];
-
+// El directorio temporal del sistema. En Linux no siempre estan TEMP ni TMP,
+// asi que se mira TMPDIR antes de caer en la carpeta de siempre.
+static const char *temp_dir(void) {
     const char *temp = getenv("TEMP");
 
     if (temp == NULL || temp[0] == '\0') {
         temp = getenv("TMP");
     }
 
+#ifndef _WIN32
     if (temp == NULL || temp[0] == '\0') {
-        temp = ".";
+        temp = getenv("TMPDIR");
+    }
+#endif
+
+    if (temp == NULL || temp[0] == '\0') {
+        temp = TEMP_FALLBACK;
     }
 
-    snprintf(paths[index], sizeof(paths[index]), "%s%scelex-app-test-%ld%s", temp, PATH_SEP, (long) getpid(), suffix);
+    return temp;
+}
+
+// El camino de un archivo temporal. Cada llamada devuelve un camino
+// distinto.
+static const char *temp_path(int index, const char *suffix) {
+    static char paths[3][512];
+
+    snprintf(paths[index], sizeof(paths[index]), "%s%scelex-app-test-%ld%s", temp_dir(), PATH_SEP, (long) getpid(),
+             suffix);
 
     return paths[index];
+}
+
+// Cada corrida del editor estrena una casa: las preferencias del usuario
+// (`<HOME>/.config/celex/config`) se guardan de verdad, y una prueba no puede
+// dejarle a la siguiente el tema o la barra que eligio. El camino se guarda en
+// lastHome para poder mirar el archivo que escribio, y en homes para borrar
+// todas las casas al terminar.
+#define HOMES_MAX 16
+
+static char lastHome[512];
+static char homes[HOMES_MAX][512];
+static int homeCount = 0;
+
+static const char *prepare_home(void) {
+    homeCount++;
+    snprintf(lastHome, sizeof(lastHome), "%s%scelex-app-test-home-%ld-%d", temp_dir(), PATH_SEP, (long) getpid(),
+             homeCount);
+
+    if (homeCount <= HOMES_MAX) {
+        snprintf(homes[homeCount - 1], sizeof(homes[homeCount - 1]), "%s", lastHome);
+    }
+
+    TT_MKDIR(lastHome);
+
+#ifdef _WIN32
+    SetEnvironmentVariableA("HOME", lastHome);
+#else
+    setenv("HOME", lastHome, 1);
+#endif
+
+    return lastHome;
+}
+
+// Borra una casa entera: el archivo de las preferencias, la plantilla de los
+// temas y los directorios que el editor creo dentro.
+static void remove_home(const char *home) {
+    char path[1024];
+
+    snprintf(path, sizeof(path), "%s/.config/celex/config", home);
+    remove(path);
+
+    snprintf(path, sizeof(path), "%s/.config/celex/themes/_ejemplo.theme", home);
+    remove(path);
+
+    snprintf(path, sizeof(path), "%s/.config/celex/themes", home);
+    TT_RMDIR(path);
+
+    snprintf(path, sizeof(path), "%s/.config/celex", home);
+    TT_RMDIR(path);
+
+    snprintf(path, sizeof(path), "%s/.config", home);
+    TT_RMDIR(path);
+
+    TT_RMDIR(home);
+}
+
+static void remove_homes(void) {
+    int count = homeCount < HOMES_MAX ? homeCount : HOMES_MAX;
+
+    for (int i = 0; i < count; i++) {
+        remove_home(homes[i]);
+    }
+}
+
+// El archivo de preferencias de la corrida que acaba de terminar.
+static void last_config_path(char *into, size_t size) {
+    snprintf(into, size, "%s/.config/celex/config", lastHome);
 }
 
 static bool write_file(const char *path, const char *content, size_t length) {
@@ -117,6 +205,8 @@ static char *read_file(const char *path) {
 
 // Corre el editor con la entrada de un archivo y la salida en otro.
 static int run_editor(const char *editor, const char *sheet, const char *keys, const char *out) {
+    prepare_home();
+
     SECURITY_ATTRIBUTES attributes;
     attributes.nLength = sizeof(attributes);
     attributes.lpSecurityDescriptor = NULL;
@@ -167,6 +257,8 @@ static int run_editor(const char *editor, const char *sheet, const char *keys, c
 #else
 
 static int run_editor(const char *editor, const char *sheet, const char *keys, const char *out) {
+    prepare_home();
+
     pid_t pid = fork();
 
     if (pid == 0) {
@@ -323,11 +415,23 @@ int main(int argc, char **argv) {
         check_has(document, "celex-document 1", "el documento empieza con su cabecera");
         check_has(document, "cell A1 \"6*7\"", "el documento guarda las celdas con su estructura");
         check_has(document, "format B1 align=left bold", "y guarda el formato de la celda");
-        check_has(document, "tools off", "y guarda las herramientas escondidas");
+        check(strstr(document, "theme") == NULL && strstr(document, "cell-size") == NULL &&
+                  strstr(document, "tools") == NULL,
+              "y no guarda lo que es del usuario y no de la hoja");
     }
 
     free(document);
     remove(documentPath);
+
+    // Lo que el Ctrl+K dejo en las preferencias: la barra escondida.
+    char config[1024];
+    last_config_path(config, sizeof(config));
+
+    char *preferences = read_file(config);
+    check(preferences != NULL, "el editor escribe las preferencias del usuario");
+    check_has(preferences, "tools off", "y guarda la barra de las herramientas escondida");
+
+    free(preferences);
 
     // Lo que se dibujo en la pantalla: la formula pegada y el borde
     // punteado de la celda copiada.
@@ -337,8 +441,8 @@ int main(int argc, char **argv) {
     if (screen != NULL) {
         check_has(screen, "6*7", "la formula pegada sale en la pantalla");
         check_has(screen, "\xE2\x94\x84", "la celda copiada sale con el borde punteado");
-        check_has(screen, "tools:", "la fila de las herramientas se pinta");
-        check_has(screen, "bold", "y con los nombres de los botones");
+        check_has(screen, "edits", "la barra de las herramientas se pinta arriba");
+        check_has(screen, "style", "y con los nombres de las secciones");
     }
 
     free(screen);
@@ -471,20 +575,21 @@ int main(int argc, char **argv) {
     remove(keysPath);
     remove(outPath);
 
-    // Y el raton: un clic en una celda lleva el cursor, un clic en un boton de la
-    // fila de herramientas hace lo que su tecla, y el clic derecho copia. Las
-    // secuencias son las que mandaria una terminal: las coordenadas empiezan en
-    // uno, y la fila de las herramientas es la 22 en una pantalla de 24.
+    // Y el raton: un clic en una celda lleva el cursor, un clic en la barra hace
+    // lo que su desplegable, y el clic derecho copia. Las secuencias son las que
+    // mandaria una terminal: las coordenadas empiezan en uno, la barra es la fila
+    // 1, las letras la 2, y la rejilla empieza en la 3.
     if (!write_file(sheetPath, "A1 = 1\n", 7)) {
         printf("  FALLO: no se puede escribir el archivo de la hoja\n");
         return 1;
     }
 
-    const char *clickedKeys = "\x1b[<0;17;9M"   // la celda C3
-                              "\x1b[<0;9;22M"   // el boton de la negrita
-                              "\x1b[<2;7;3M"    // clic derecho en A1: copiarla
+    const char *clickedKeys = "\x1b[<0;17;10M"  // la celda C3
+                              "\x1b[<0;12;1M"   // la seccion style de la barra
+                              "\x1b[<0;14;4M"   // el boton de la negrita, colgando
+                              "\x1b[<2;7;4M"    // clic derecho en A1: copiarla
                               "\x13"            // Ctrl+S: guardar el documento
-                              "\x0b"            // Ctrl+K: quitar la fila
+                              "\x0b"            // Ctrl+K: quitar la barra
                               "\x1b[<0;73;23M"  // el chip del final de las pestanas
                               "\x13"            // Ctrl+S: guardar otra vez
                               "qq";
@@ -503,14 +608,23 @@ int main(int argc, char **argv) {
     if (document != NULL) {
         check_has(document, "select A1", "el clic derecho puso el cursor en la celda copiada");
         check_has(document, "format C3 bold", "y el clic en el boton puso el formato");
-        check(strstr(document, "tools off") == NULL,
-              "el chip de la fila de las pestanas volvio a traer la fila de las herramientas");
     } else {
         check(false, "el documento de los clics se guardo");
     }
 
     free(document);
     remove(documentPath);
+
+    // El chip de la fila de las pestanas volvio a traer la barra, y eso queda
+    // en las preferencias de esta corrida.
+    char clickConfig[1024];
+    last_config_path(clickConfig, sizeof(clickConfig));
+
+    char *clickPreferences = read_file(clickConfig);
+    check(clickPreferences != NULL, "las preferencias de los clics se escribieron");
+    check_has(clickPreferences, "tools on", "el chip de la fila de las pestanas volvio a traer la barra");
+
+    free(clickPreferences);
 
     screen = read_file(outPath);
 
@@ -524,9 +638,9 @@ int main(int argc, char **argv) {
     remove(keysPath);
     remove(outPath);
 
-    // Y los colores. El tema de empezar no pinta nada con color, y el Ctrl+T
-    // pasa a uno que si: lo que se comprueba es que la secuencia del color de
-    // las rayas llegue a la pantalla.
+    // Y los colores. El tema de empezar no pinta nada con color, y la ventana de
+    // los temas si: lo que se comprueba es que la secuencia del color de las rayas
+    // llegue a la pantalla al probar el tema de la lista.
     if (!write_file(sheetPath, "A1 = 1\n", 7)) {
         printf("  FALLO: no se puede escribir el archivo de la hoja\n");
         return 1;
@@ -549,7 +663,7 @@ int main(int argc, char **argv) {
     free(screen);
     remove(outPath);
 
-    if (!write_file(keysPath, "\x14q", 2)) {
+    if (!write_file(keysPath, "\x14\x1b[Bq", 5)) {
         printf("  FALLO: no se puede escribir el archivo de las teclas\n");
         return 1;
     }
@@ -560,7 +674,7 @@ int main(int argc, char **argv) {
     screen = read_file(outPath);
 
     if (screen != NULL) {
-        check_has(screen, GRID_COLOR, "el Ctrl+T pinta la rejilla con el color del tema");
+        check_has(screen, GRID_COLOR, "la ventana de los temas pinta la rejilla con el color elegido");
     }
 
     free(screen);
@@ -644,6 +758,8 @@ int main(int argc, char **argv) {
     remove(sheetPath);
     remove(keysPath);
     remove(outPath);
+
+    remove_homes();
 
     if (failures == 0) {
         printf("  editor: todo correcto\n");

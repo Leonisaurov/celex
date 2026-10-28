@@ -1,4 +1,5 @@
 #include "file.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,10 +22,15 @@ static char *trim(char *text) {
     return text;
 }
 
-// El archivo entero, en un texto. Quien lo recibe lo suelta.
-static char *read_all(const char *path) {
+// El archivo entero, en un texto. Quien lo recibe lo suelta. Si no puede abrirlo,
+// dice si es que no existe o es que no se puede leer.
+static char *read_all(const char *path, int *missing) {
     FILE *file = fopen(path, "rb");
     if (file == NULL) {
+        if (missing != NULL) {
+            *missing = errno == ENOENT;
+        }
+
         return NULL;
     }
 
@@ -152,10 +158,13 @@ int load_file(const char *path, CellManager *manager, int *ignored) {
         *ignored = 0;
     }
 
-    char *text = read_all(path);
+    int missing = 0;
+    char *text = read_all(path, &missing);
 
     if (text == NULL) {
-        return FILE_NOT_FOUND;
+        // Si es que no existe, hoja nueva. Si existe pero no se puede leer, un
+        // error de verdad: no quiero que se pise un archivo que si esta ahi.
+        return missing ? FILE_NOT_FOUND : FILE_ERROR;
     }
 
     // El documento del editor trae su cabecera. Si no la tiene, es un guion del

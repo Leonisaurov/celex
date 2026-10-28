@@ -3,7 +3,8 @@ rem Build nativo de Windows con MSVC (Visual Studio Build Tools).
 rem
 rem   build.bat            release
 rem   build.bat debug      con simbolos de depuracion
-rem   build.bat test      compila y corre las pruebas
+rem   build.bat test       compila y corre las pruebas
+rem   build.bat tools      las herramientas de mirar (bench y screen)
 rem   build.bat clean      borra build\
 
 setlocal enabledelayedexpansion

@@ -11,7 +11,4 @@
 // de mensaje.
 int run_script(CellManager *manager, char *message, size_t size);
 
-// Ejecuta la hoja con un interprete externo, en vez de con la libreria.
-int run_external_script(CellManager *manager, const char *interpreter, char *message, size_t size);
-
 #endif

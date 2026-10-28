@@ -9,9 +9,6 @@
 // editar a mano esta el ".cle".
 //
 //   celex-document 1
-//   theme oscuro
-//   cell-size 4 2
-//   tools off
 //   sheet "numeros"
 //     select A1
 //     scroll 0 0
@@ -23,6 +20,11 @@
 //     select B2
 //     scroll 10 6
 //   end-sheet
+//
+// - El tema, el tamano de las celdas y la barra de herramientas eran campos de
+//   este documento en la version anterior; ahora son preferencias del usuario
+//   y viven en `$HOME/.config/celex/config`. Si un archivo viejo los trae, se
+//   leen y se dejan estar.
 //
 // - Lo que va entre comillas lleva el texto escapado: la comilla se escribe \"
 //   y la barra \". El contenido de una celda es siempre una linea, sin saltos.

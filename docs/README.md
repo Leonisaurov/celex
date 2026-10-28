@@ -13,13 +13,14 @@ probar, arrancar); `docs/ideas.md` es el cuaderno de lo que queda por hacer.
 | Documento | De qué habla |
 |---|---|
 | [organizacion.md](organizacion.md) | las capas, fichero por fichero, el build, el número de compilación, los commits |
-| [pantalla.md](pantalla.md) | el layout, las tres barras, el fotograma y el deslizamiento de la vista |
-| [teclas-y-raton.md](teclas-y-raton.md) | todas las teclas, todos los clics y la fila de herramientas |
+| [pantalla.md](pantalla.md) | el layout, las barras, las ventanas flotantes, el fotograma y el deslizamiento de la vista |
+| [teclas-y-raton.md](teclas-y-raton.md) | todas las teclas, todos los clics y la barra de herramientas |
 | [hojas-historial-y-entrada.md](hojas-historial-y-entrada.md) | las hojas, el portapapeles, deshacer/rehacer y el autocompletado |
 | [temas-y-formatos.md](temas-y-formatos.md) | los colores del tema, los formatos de celda y cómo se pintan |
 | [archivos.md](archivos.md) | el `.cle` y el `.clex`: gramática, carga, guardado e ida y vuelta |
 | [lenguaje.md](lenguaje.md) | celex script: todo lo que acepta y todo lo que no |
 | [pruebas.md](pruebas.md) | el runner de casos, las pruebas del editor y las herramientas de mirar |
+| [ideas.md](ideas.md) | el cuaderno de lo que queda por hacer y de los defectos conocidos |
 
 ## Nombres que se repiten en todos los documentos
 
@@ -33,8 +34,13 @@ probar, arrancar); `docs/ideas.md` es el cuaderno de lo que queda por hacer.
   en el texto empiezan en uno.
 - **guion** — el archivo `.cle`, el programa del lenguaje.
 - **documento** — el archivo `.clex`, el estado del editor.
-- **fila de herramientas**, **fila de pestañas**, **barra de estado** — las tres
-  líneas de abajo de la pantalla.
+- **preferencias** — lo que se elige una vez y vale para todos los archivos (tema,
+  tamaño de celda, barra de herramientas, valores o fuente). Viven en
+  `$HOME/.config/celex/config`, no en el documento.
+- **barra de herramientas**, **fila de pestañas**, **barra de estado** — las tres
+  líneas que enmarcan la rejilla: la barra arriba, las otras dos abajo.
+- **ventana flotante** — lo que cuelga de la barra o sale en medio de la rejilla: el
+  desplegable de una sección, la lista de los temas, el campo de un nombre de archivo.
 
 ## Un detalle de idioma
 

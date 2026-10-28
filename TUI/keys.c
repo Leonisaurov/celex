@@ -3,6 +3,7 @@
 #include "clipboard.h"
 #include "document.h"
 #include "file.h"
+#include "popup.h"
 #include "ref.h"
 #include "script.h"
 #include "theme.h"
@@ -130,19 +131,317 @@ static void copy(CellManager *manager) {
     set_message(manager, message);
 }
 
-// Poner y quitar la fila de las herramientas. Es un ajuste de la pantalla, como
+// Poner y quitar la barra de las herramientas. Es un ajuste de la pantalla, como
 // el tamano de las celdas, y no cuenta como un cambio del archivo. El aviso va
 // corto a proposito: la barra de estado dice el nombre del archivo al final, y un
 // aviso largo se lo taparia, que es justo el sitio donde se clica para volver a
-// traer la fila. Lo que se ve cuando esta quitada es el chip de la fila de las
+// traer la barra. Lo que se ve cuando esta quitada es el chip de la fila de las
 // pestanas.
 static void toggle_tools(CellManager *manager) {
-    manager->showTools = !manager->showTools;
+    manager->showMenu = !manager->showMenu;
 
-    // La rejilla cambia de sitio con la fila, asi que se pinta entera de nuevo.
+    // Un desplegable de una barra que ya no esta es una ventana sin puerta.
+    popup_cancel(&manager->popup);
+
+    // La rejilla cambia de sitio con la barra, asi que se pinta entera de nuevo.
     invalidate_screen();
 
-    set_message(manager, manager->showTools ? "tools shown" : "tools off");
+    set_message(manager, manager->showMenu ? "tools shown" : "tools off");
+}
+
+// El popup mide sobre la pantalla de verdad, con los mismos margenes que la
+// rejilla.
+static void popup_screen(CellManager *manager, int *width, int *gridBottom) {
+    int size = manager->size.y < 6 ? 6 : manager->size.y;
+
+    *width = manager->size.x < 20 ? 20 : manager->size.x;
+    *gridBottom = grid_bottom(manager, size);
+}
+
+// La lista de los temas, uno por fila.
+static void open_theme_popup(CellManager *manager) {
+    const char *names[POPUP_LIMIT];
+    int count = theme_count();
+    int current = 0;
+
+    if (count > POPUP_LIMIT) {
+        count = POPUP_LIMIT;
+    }
+
+    for (int i = 0; i < count; i++) {
+        names[i] = theme_name_at(i);
+
+        if (strcmp(names[i], theme_name()) == 0) {
+            current = i;
+        }
+    }
+
+    int width;
+    int gridBottom;
+
+    popup_screen(manager, &width, &gridBottom);
+    popup_open_list(&manager->popup, POP_TARGET_THEME, names, count, current, width, gridBottom);
+}
+
+// El nombre del archivo, sin la ruta: es lo que se quiere cambiar con el
+// guardar con otro nombre.
+static const char *file_name(const char *path) {
+    const char *name = path;
+
+    for (const char *at = path; *at != '\0'; at++) {
+        if (*at == '/' || *at == '\\') {
+            name = at + 1;
+        }
+    }
+
+    return name;
+}
+
+// La carpeta del archivo que se esta viendo, con su separador: abrir un vecino
+// es lo que mas se hace despues de abrir uno.
+static void folder_of(const char *path, char *into, size_t size) {
+    const char *last = NULL;
+
+    for (const char *at = path; *at != '\0'; at++) {
+        if (*at == '/' || *at == '\\') {
+            last = at;
+        }
+    }
+
+    if (last == NULL) {
+        into[0] = '\0';
+        return;
+    }
+
+    size_t length = (size_t) (last - path) + 1;
+
+    if (length >= size) {
+        length = size - 1;
+    }
+
+    memcpy(into, path, length);
+    into[length] = '\0';
+}
+
+static void open_text_popup(CellManager *manager, PopupTarget target, const char *initial, const char *about) {
+    int width;
+    int gridBottom;
+
+    popup_screen(manager, &width, &gridBottom);
+
+    // El aviso dice de donde se parte: el campo puede salir vacio (guardar con
+    // otro nombre) o con la carpeta de delante (abrir un vecino), y escribir
+    // detras de un nombre viejo nunca dio un nombre.
+    char message[MESSAGE_SIZE];
+
+    popup_open_input(&manager->popup, target, initial, width, gridBottom);
+
+    if (target == POP_TARGET_SAVE_AS) {
+        snprintf(message, sizeof(message), "save as: now %s, Enter to write, Esc to leave", about);
+    } else {
+        snprintf(message, sizeof(message), "open: Enter to read, Esc to leave");
+    }
+
+    set_message(manager, message);
+}
+
+// El tema puesto sigue la seleccion del popup: se prueba con solo moverse, y el
+// propio popup se repinta con el tema nuevo en el mismo fotograma.
+static void preview_theme(CellManager *manager, int index) {
+    if (manager->popup.target != POP_TARGET_THEME) {
+        return;
+    }
+
+    theme_set_by_name(theme_name_at(index));
+    invalidate_screen();
+}
+
+// Confirmar el popup de elegir: la fila marcada manda su tecla, y el boton
+// sigue siendo su tecla tambien flotando.
+static bool popup_choose(Editor *editor, CellManager *manager, int index) {
+    Popup *popup = &manager->popup;
+    bool wasMenu = popup->kind == POPUP_MENU;
+    int key = popup->keys[index];
+
+    if (wasMenu) {
+        popup_close(popup);
+
+        return handle_key(editor, manager, key);
+    }
+
+    if (popup->target == POP_TARGET_THEME) {
+        preview_theme(manager, index);
+        set_message(manager, theme_name());
+    }
+
+    popup_close(popup);
+
+    return editor->running;
+}
+
+// Confirmar el campo de texto: guardar con otro nombre, o abrir lo que diga.
+static void popup_commit_text(Editor *editor, CellManager *manager) {
+    Popup *popup = &manager->popup;
+    char message[MESSAGE_SIZE];
+
+    if (popup->text[0] == '\0') {
+        popup_close(popup);
+        set_message(manager, "nothing to write");
+
+        return;
+    }
+
+    if (popup->target == POP_TARGET_SAVE_AS) {
+        bool saved = save_document(popup->text, manager) == FILE_LOADED;
+        char path[1024];
+
+        snprintf(path, sizeof(path), "%s", popup->text);
+        popup_close(popup);
+
+        if (saved) {
+            snprintf(editor->savePath, sizeof(editor->savePath), "%s", path);
+            sheet_mark_saved(manager);
+            snprintf(message, sizeof(message), "saved %s", file_name(path));
+            set_message(manager, message);
+        } else {
+            set_error_message(manager, "cannot write file");
+        }
+
+        return;
+    }
+
+    if (sheet_any_dirty(manager)) {
+        popup_close(popup);
+        set_message(manager, "unsaved changes: Ctrl+S before opening");
+
+        return;
+    }
+
+    int ignored = 0;
+
+    // El documento manda: lo que habia se olvida antes de leer.
+    workbook_clear(manager);
+
+    int status = load_file(popup->text, manager, &ignored);
+    char path[1024];
+
+    snprintf(path, sizeof(path), "%s", popup->text);
+    popup_close(popup);
+
+    if (status == FILE_LOADED || status == FILE_NOT_FOUND) {
+        snprintf(editor->path, sizeof(editor->path), "%s", path);
+
+        // Un guion se importa y guarda al lado, en el formato del editor.
+        if (document_is_path(path)) {
+            snprintf(editor->savePath, sizeof(editor->savePath), "%s", path);
+        } else {
+            document_change_extension(path, ".clex", editor->savePath, sizeof(editor->savePath));
+        }
+    }
+
+    if (status == FILE_LOADED) {
+        if (ignored > 0) {
+            snprintf(message, sizeof(message), "loaded (%d lines ignored)", ignored);
+        } else {
+            snprintf(message, sizeof(message), "opened %s", file_name(path));
+        }
+
+        set_message(manager, message);
+    } else if (status == FILE_NOT_FOUND) {
+        // No existe: hoja nueva, como con el archivo que se nombra al abrir el
+        // programa.
+        snprintf(message, sizeof(message), "new sheet: saves as %s", file_name(editor->savePath));
+        set_message(manager, message);
+    } else {
+        set_error_message(manager, "cannot open file");
+    }
+}
+
+// La tecla, para el popup puesto. Devuelve false si la tecla no es del popup,
+// que lo cierra y se hace lo que tocase.
+static bool popup_key(Editor *editor, CellManager *manager, int key) {
+    Popup *popup = &manager->popup;
+
+    if (popup->kind == POPUP_INPUT) {
+        if (key != KEY_ESC && key != KEY_ENTER && key != KEY_BACKSPACE && !(key >= 32 && key < 127)) {
+            popup_cancel(popup);
+
+            return false;
+        }
+
+        switch (key) {
+            case KEY_ESC:
+                popup_cancel(popup);
+                set_message(manager, "");
+                break;
+            case KEY_ENTER:
+                popup_commit_text(editor, manager);
+                break;
+            case KEY_BACKSPACE: {
+                size_t length = strlen(popup->text);
+
+                if (length > 0) {
+                    popup->text[length - 1] = '\0';
+                }
+
+                break;
+            }
+            default: {
+                size_t length = strlen(popup->text);
+
+                if (length + 1 < POPUP_TEXT) {
+                    popup->text[length] = (char) key;
+                    popup->text[length + 1] = '\0';
+                }
+
+                break;
+            }
+        }
+
+        return true;
+    }
+
+    bool up = key == KEY_UP || key == 'k';
+    bool down = key == KEY_DOWN || key == 'j';
+
+    if (!up && !down && key != KEY_ENTER && key != KEY_ESC) {
+        popup_cancel(popup);
+
+        return false;
+    }
+
+    if (up || down) {
+        if (popup->count > 0) {
+            int step = up ? -1 : 1;
+
+            popup->selected += step;
+
+            // La lista da la vuelta: el popup de los temas es una rueda, como
+            // la de antes con el Ctrl+T solo.
+            if (popup->selected < 0) {
+                popup->selected = popup->count - 1;
+            }
+
+            if (popup->selected >= popup->count) {
+                popup->selected = 0;
+            }
+
+            preview_theme(manager, popup->selected);
+        }
+
+        return true;
+    }
+
+    if (key == KEY_ESC) {
+        popup_cancel(popup);
+        set_message(manager, "");
+
+        return true;
+    }
+
+    popup_choose(editor, manager, popup->selected);
+
+    return true;
 }
 
 bool handle_mouse(Editor *editor, CellManager *manager, const Mouse *mouse) {
@@ -167,21 +466,52 @@ bool handle_mouse(Editor *editor, CellManager *manager, const Mouse *mouse) {
         manager->renameText[0] = '\0';
     }
 
-    if (manager->showTools && mouse->row == tools_row(manager, height)) {
-        int tool = tool_at_column(width, mouse->column);
+    // Con una ventana delante, el clic es de la ventana: dentro, la fila
+    // elegida manda su tecla; fuera, el desplegable se cierra y se absorbe el
+    // clic, para no mover el cursor detras de la cortina.
+    if (manager->popup.active) {
+        int item = -1;
 
-        if (tool < 0) {
+        if (popup_at_cell(&manager->popup, mouse->column, mouse->row, &item)) {
+            if (manager->popup.kind == POPUP_INPUT) {
+                return editor->running;
+            }
+
+            if (item >= 0) {
+                manager->popup.selected = item;
+
+                return popup_choose(editor, manager, item);
+            }
+
             return editor->running;
         }
 
-        // El boton es su tecla: se manda la tecla, y lo que hace es lo que hace
-        // la mano.
-        return handle_key(editor, manager, tool_at(tool).key);
+        if (manager->popup.kind == POPUP_MENU) {
+            popup_cancel(&manager->popup);
+        }
+
+        return editor->running;
+    }
+
+    // La barra de las herramientas, arriba de todo: un clic en una seccion
+    // cuelga su desplegable, y otro en la misma lo recoge.
+    if (manager->showMenu && mouse->row == menu_row()) {
+        int section = menu_at_column(width, mouse->column);
+
+        if (section >= 0) {
+            int size;
+            int gridBottom;
+
+            popup_screen(manager, &size, &gridBottom);
+            popup_open_menu(&manager->popup, section, size, gridBottom);
+        }
+
+        return editor->running;
     }
 
     if (mouse->row == sheet_row(height)) {
-        if (!manager->showTools && mouse->column >= tools_chip_column(width)) {
-            // El chip que se escribe cuando la fila esta quitada.
+        if (!manager->showMenu && mouse->column >= tools_chip_column(width)) {
+            // El chip que se escribe cuando la barra esta quitada.
             toggle_tools(manager);
 
             return editor->running;
@@ -268,6 +598,15 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
         editor->reloading = false;
     }
 
+    // Con una ventana delante, la tecla es de la ventana. Las que no son de
+    // ella la cierran y se hacen lo de siempre: una ventana no puede tapar una
+    // orden.
+    if (manager->popup.active) {
+        if (popup_key(editor, manager, key)) {
+            return editor->running;
+        }
+    }
+
     // Mientras se escribe el nombre de la hoja, lo que se teclea va al nombre:
     // Enter lo fija y Escape lo deja como estaba. Una tecla de mando corta la
     // escritura y se hace lo que toca, para no quedarse uno escribiendo nombres
@@ -347,7 +686,7 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
         recalculate_sheet(manager);
     } else if (key == KEY_CTRL_L) {
         // Recargar el archivo, por si se cambio por fuera.
-        if (editor->path == NULL) {
+        if (editor->path[0] == '\0') {
             set_message(manager, "no file to load");
         } else if (sheet_any_dirty(manager) && !editor->reloading) {
             editor->reloading = true;
@@ -416,8 +755,8 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
             keepMessage = true;
         }
     } else if (key == KEY_CTRL_K) {
-        // La fila de las herramientas, arriba o abajo: quien trabaja a teclado se
-        // queda con una fila mas de hoja, y quien trabaja a clic las quiere
+        // La barra de las herramientas, puesta o quitada: quien trabaja a teclado se
+        // queda con una fila mas de hoja, y quien trabaja a clic la quiere
         // delante.
         toggle_tools(manager);
         keepMessage = true;
@@ -536,14 +875,41 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                 set_cell_size(cellWidth, cellHeight - 1);
                 break;
             case KEY_CTRL_T:
-                // El siguiente tema de colores. La barra dice cual esta
-                // puesto, para no perderlo de vista.
-                set_message(manager, theme_next());
+                // Los temas, en una ventana flotante: cada nombre escrito con su
+                // propio tema, y puesto al instante mientras se recorre la lista.
+                if (manager->popup.active && manager->popup.target == POP_TARGET_THEME) {
+                    popup_cancel(&manager->popup);
+                    break;
+                }
 
-                // Los colores no estan en el fotograma: hay que volver a
-                // pintarlo entero para que se noten.
-                invalidate_screen();
+                open_theme_popup(manager);
+                set_message(manager, theme_name());
+                keepMessage = true;
+                break;
+            case KEY_CTRL_G: {
+                // Guardar con otro nombre: el aviso dice el que hay ahora, que
+                // es de donde se parte.
+                const char *seed = editor->savePath;
 
+                if (seed[0] == '\0') {
+                    seed = "workbook.clex";
+                }
+
+                open_text_popup(manager, POP_TARGET_SAVE_AS, "", file_name(seed));
+                keepMessage = true;
+                break;
+            }
+            case KEY_CTRL_Q: {
+                // Abrir otro archivo: la carpeta del que se esta viendo sale
+                // escrita, para cambiar solo el nombre de lo de al lado.
+                char folder[1024];
+
+                folder_of(editor->path, folder, sizeof(folder));
+                open_text_popup(manager, POP_TARGET_OPEN, folder, "");
+
+                keepMessage = true;
+                break;
+            }
                 keepMessage = true;
                 break;
             case KEY_CTRL_N:
@@ -605,7 +971,7 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                 break;
             }
             case KEY_CTRL_S:
-                if (editor->savePath == NULL) {
+                if (editor->savePath[0] == '\0') {
                     set_message(manager, "no file to save");
                 } else if (save_document(editor->savePath, manager) == FILE_LOADED) {
                     set_message(manager, "saved");
@@ -620,7 +986,7 @@ bool handle_key(Editor *editor, CellManager *manager, int key) {
                 // La hoja que se esta viendo, escrita como guion del lenguaje, al
                 // lado del documento. Es lo que se puede editar a mano o correr con
                 // el interprete.
-                if (editor->savePath == NULL) {
+                if (editor->savePath[0] == '\0') {
                     set_error_message(manager, "nothing to export");
                     keepMessage = true;
                     break;

@@ -23,6 +23,7 @@
 #include <string.h>
 
 #ifdef _WIN32
+#include <direct.h>
 #include <windows.h>
 #include <wincon.h>
 #include <process.h>
@@ -31,6 +32,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
@@ -75,6 +77,83 @@ static const char *temp_path(int index, const char *suffix) {
     snprintf(paths[index], sizeof(paths[index]), "%s%scelex-console-test-%ld%s", temp, PATH_SEP, current_pid(), suffix);
 
     return paths[index];
+}
+
+// El editor guarda sus preferencias en `<HOME>/.config/celex/config`. La prueba
+// le da una casa vacia para que lo que tenga el usuario no cambie los colores,
+// el tamano de las celdas ni la fila de las herramientas que ve el editor.
+static char consoleHome[512];
+
+static void prepare_home(void) {
+    const char *temp = getenv("TEMP");
+
+    if (temp == NULL || temp[0] == '\0') {
+        temp = getenv("TMP");
+    }
+
+#ifndef _WIN32
+    // En Linux lo normal es TMPDIR, sin TEMP ni TMP.
+    if (temp == NULL || temp[0] == '\0') {
+        temp = getenv("TMPDIR");
+    }
+#endif
+
+    if (temp == NULL || temp[0] == '\0') {
+        temp = "/tmp";
+    }
+
+    snprintf(consoleHome, sizeof(consoleHome), "%s%scelex-console-test-home-%ld", temp, PATH_SEP, current_pid());
+
+#ifdef _WIN32
+    _mkdir(consoleHome);
+    SetEnvironmentVariableA("HOME", consoleHome);
+#else
+    mkdir(consoleHome, 0755);
+    setenv("HOME", consoleHome, 1);
+#endif
+}
+
+// Borra la casa de la prueba: lo que el editor creo dentro y luego los
+// directorios.
+static void remove_home(void) {
+    char path[1024];
+
+    if (consoleHome[0] == '\0') {
+        return;
+    }
+
+    snprintf(path, sizeof(path), "%s/.config/celex/config", consoleHome);
+    remove(path);
+
+    snprintf(path, sizeof(path), "%s/.config/celex/themes/_ejemplo.theme", consoleHome);
+    remove(path);
+
+    snprintf(path, sizeof(path), "%s/.config/celex/themes", consoleHome);
+#ifdef _WIN32
+    _rmdir(path);
+#else
+    rmdir(path);
+#endif
+
+    snprintf(path, sizeof(path), "%s/.config/celex", consoleHome);
+#ifdef _WIN32
+    _rmdir(path);
+#else
+    rmdir(path);
+#endif
+
+    snprintf(path, sizeof(path), "%s/.config", consoleHome);
+#ifdef _WIN32
+    _rmdir(path);
+#else
+    rmdir(path);
+#endif
+
+#ifdef _WIN32
+    _rmdir(consoleHome);
+#else
+    rmdir(consoleHome);
+#endif
 }
 
 static bool write_file(const char *path, const char *content, size_t length) {
@@ -142,7 +221,7 @@ static const char *pieces[] = {
     "\x1b[17;29;0;1;8;1_\x1b[83;31;19;1;8;1_\x1b[83;31;19;0;8;1_\x1b[17;29;0;0;0;1_",
     // Un clic en la celda B2. La consola lo convierte en su evento de raton, y el
     // editor lo vuelve a traducir a la secuencia de siempre.
-    "\x1b[<0;12;6M",
+    "\x1b[<0;12;7M",
     // Salir.
     "q",
 };
@@ -162,7 +241,7 @@ static const char *pieces[] = {
     "\x13",
     // Un clic en la celda B2: la terminal manda la secuencia, y el editor la
     // convierte en mover el cursor.
-    "\x1b[<0;12;6M",
+    "\x1b[<0;12;7M",
     // Salir.
     "q",
 };
@@ -176,6 +255,8 @@ static const size_t pieceCount = sizeof(pieces) / sizeof(pieces[0]);
 // Corre el editor dentro de una pseudoconsola, que es una consola de
 // verdad: el editor ve los eventos de la consola de Win32.
 static int run_in_console(const char *editor, const char *sheet, char **output, size_t *outputLength) {
+    prepare_home();
+
     SECURITY_ATTRIBUTES attributes;
     attributes.nLength = sizeof(attributes);
     attributes.lpSecurityDescriptor = NULL;
@@ -416,6 +497,8 @@ static int run_in_console(const char *editor, const char *sheet, char **output, 
 
 // Corre el editor dentro de un terminal de verdad.
 static int run_in_console(const char *editor, const char *sheet, char **output, size_t *outputLength) {
+    prepare_home();
+
     int master = posix_openpt(O_RDWR | O_NOCTTY);
 
     if (master < 0) {
@@ -654,6 +737,8 @@ int main(int argc, char **argv) {
     free(output);
 
     remove(sheetPath);
+
+    remove_home();
 
     if (failures == 0) {
         printf("  consola: todo correcto\n");

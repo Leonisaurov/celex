@@ -14,6 +14,7 @@ typedef enum {
     STYLE_STATUS,   // la barra de estado
     STYLE_MESSAGE,  // lo que la barra dice a la derecha
     STYLE_ERROR,    // lo que la barra dice cuando algo no salio
+    STYLE_TOOLS,    // la barra de las herramientas
     STYLE_COUNT
 } ScreenStyle;
 
@@ -45,5 +46,24 @@ int theme_set_by_name(const char *name);
 
 // Cuantos temas hay, para poder dar la vuelta a la lista.
 int theme_count(void);
+
+// El nombre del tema numero index, o "" si no es de ninguno. El popup de los
+// temas apunta la lista entera sin tocar el tema puesto.
+const char *theme_name_at(int index);
+
+// La secuencia con la que un tema pinta el fuente de una celda, para que cada
+// nombre del popup se escriba con su propio tema.
+const char *theme_text_sequence(int index);
+
+// Carga los temas que define el usuario desde una carpeta: cada archivo
+// `*.theme` es un tema, escrito en el formato de definicion (lineas
+// `<parte> <#fg> [on <#bg>] [bold] [underline] [reverse]` y una linea `name`).
+// Primero olvida los que hubiera cargado, asi que repetir la llamada recarga.
+// Devuelve cuantos temas anadio. Ignora los archivos con nombre repetido y los
+// que empiezan por `_` o por `.` (esos los salta ya el recorrido de la carpeta).
+int theme_load_themes_dir(const char *dir);
+
+// Olvida los temas cargados del usuario y su memoria. Los integrados quedan.
+void theme_free_user(void);
 
 #endif

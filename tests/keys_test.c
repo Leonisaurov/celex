@@ -38,7 +38,10 @@ static void check(bool ok, const char *what) {
         return;
     }
 
-    printf("  FALLO: %s\n", what);
+    // Por la salida de errores: las pruebas de pantalla redirigen la salida
+    // normal a un archivo, y un aviso escrito ahi se colaria en lo capturado
+    // en vez de llegar a quien mira.
+    fprintf(stderr, "  FALLO: %s\n", what);
     failures++;
 }
 
@@ -50,7 +53,7 @@ static void check_content(CellManager *manager, unsigned int x, unsigned int y, 
         return;
     }
 
-    printf("  FALLO: %s (esperado \"%s\", obtenido \"%s\")\n", what, wanted, content);
+    fprintf(stderr, "  FALLO: %s (esperado \"%s\", obtenido \"%s\")\n", what, wanted, content);
     failures++;
 }
 
@@ -62,7 +65,7 @@ static void check_value(CellManager *manager, unsigned int x, unsigned int y, co
         return;
     }
 
-    printf("  FALLO: %s (esperado \"%s\", obtenido \"%s\")\n", what, wanted, value);
+    fprintf(stderr, "  FALLO: %s (esperado \"%s\", obtenido \"%s\")\n", what, wanted, value);
     failures++;
 }
 
@@ -71,7 +74,7 @@ static void check_message(CellManager *manager, const char *wanted, const char *
         return;
     }
 
-    printf("  FALLO: %s (esperado \"%s\", obtenido \"%s\")\n", what, wanted, manager->message);
+    fprintf(stderr, "  FALLO: %s (esperado \"%s\", obtenido \"%s\")\n", what, wanted, manager->message);
     failures++;
 }
 
@@ -110,11 +113,9 @@ static char *draw_path(CellManager *manager, const char *path) {
     invalidate_screen();
 
     print_cell_manager(manager);
-    print_tools(manager);
     print_sheets(manager);
     print_status(manager, "NORMAL", path);
     print_cell_manager(manager);
-    print_tools(manager);
     print_sheets(manager);
     print_status(manager, "NORMAL", path);
 
@@ -158,7 +159,7 @@ int main(void) {
 
     CellManager manager = new_cell_manager((TermSize) { .x = 80, .y = 24 });
     Editor editor = {
-        .path = NULL,
+        .path = "",
         .running = true,
         .quitting = false,
         .reloading = false,
@@ -287,7 +288,7 @@ int main(void) {
 
     // Sin portapapeles, el Ctrl+V no hace nada y avisa.
     CellManager empty = new_cell_manager((TermSize) { .x = 80, .y = 24 });
-    Editor emptyEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+    Editor emptyEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
 
     handle_key(&emptyEditor, &empty, KEY_CTRL_V);
     check_message(&empty, "the clipboard is empty", "pegar sin portapapeles avisa");
@@ -296,7 +297,7 @@ int main(void) {
     // El tamano de las celdas: los corchetes mueven el ancho y las llaves el
     // alto, y ninguna de esas teclas empieza a escribir en la celda.
     CellManager sized = new_cell_manager((TermSize) { .x = 80, .y = 24 });
-    Editor sizedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+    Editor sizedEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
 
     set_cell_size(4, 2);
 
@@ -317,32 +318,64 @@ int main(void) {
 
     free_cell_manager(&sized);
 
-    // Los temas de colores: el Ctrl+T pasa al siguiente, y dando la vuelta
-    // entera se vuelve al de empezar.
+    // Los temas de colores: el Ctrl+T abre la ventana flotante, la flecha los
+    // prueba al instante, y Enter la cierra con el puesto.
     CellManager themed = new_cell_manager((TermSize) { .x = 80, .y = 24 });
-    Editor themedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+    Editor themedEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
 
     const char *first = theme_name();
 
     handle_key(&themedEditor, &themed, KEY_CTRL_T);
-    check(strcmp(theme_name(), first) != 0, "el Ctrl+T cambia el tema");
-    check_message(&themed, theme_name(), "la barra dice el tema que esta puesto");
+    check(themed.popup.active && themed.popup.kind == POPUP_LIST && themed.popup.target == POP_TARGET_THEME,
+          "el Ctrl+T abre la ventana de los temas");
+    check(themed.popup.count == theme_count() && themed.popup.count > 1, "la lista trae todos los temas");
+    check(strcmp(theme_name(), first) == 0, "abrir la ventana no cambia todavia el tema");
 
-    // Se da la vuelta a la lista menos una: falta un tema para volver al
-    // principio.
-    for (int i = 0; i < theme_count() - 2; i++) {
-        handle_key(&themedEditor, &themed, KEY_CTRL_T);
+    // Cada nombre escrito con su propio tema: en lo pintado tienen que salir las
+    // secuencias de temas distintos a la vez.
+    screen = draw(&themed);
+    check(screen != NULL && strstr(screen, "themes") != NULL, "la ventana dice que es de temas");
+    check(screen != NULL && strstr(screen, "\x1b[0;37m") != NULL && strstr(screen, "\x1b[0;30m") != NULL,
+          "y cada tema se escribe con su propio color");
+    free(screen);
+
+    handle_key(&themedEditor, &themed, KEY_DOWN);
+    check(strcmp(theme_name(), first) != 0, "la flecha prueba el tema siguiente al instante");
+
+    // La rueda tambien: llega como flecha.
+    handle_key(&themedEditor, &themed, KEY_UP);
+    check(strcmp(theme_name(), first) == 0, "y para atras vuelve a poner el de empezar");
+
+    handle_key(&themedEditor, &themed, KEY_ENTER);
+    check(!themed.popup.active, "Enter cierra la ventana con el tema puesto");
+    check(strcmp(theme_name(), first) == 0, "y el tema queda");
+
+    // Escape la cierra sin tocar lo puesto.
+    handle_key(&themedEditor, &themed, KEY_CTRL_T);
+    handle_key(&themedEditor, &themed, KEY_DOWN);
+    handle_key(&themedEditor, &themed, KEY_ESC);
+    check(!themed.popup.active, "Escape cierra la ventana");
+    check(strcmp(theme_name(), first) == 0, "y cancelar deshace la vista previa");
+
+    // Dar la vuelta a la lista, como antes daba el Ctrl+T a ciclos.
+    for (int i = 0; i < theme_count(); i++) {
+        handle_key(&themedEditor, &themed, KEY_DOWN);
     }
 
+    handle_key(&themedEditor, &themed, KEY_ENTER);
+    check(strcmp(theme_name(), first) == 0, "la lista de temas da la vuelta");
+
+    // Una tecla que no es de la ventana la cierra y se hace lo de siempre.
     handle_key(&themedEditor, &themed, KEY_CTRL_T);
-    check(strcmp(theme_name(), first) == 0, "los temas dan la vuelta y vuelven al primero");
+    handle_key(&themedEditor, &themed, KEY_CTRL_B);
+    check(!themed.popup.active, "una tecla de mando cierra la ventana");
 
     free_cell_manager(&themed);
 
     // El formato de la celda, por teclado: cada tecla hace una cosa, y la
     // alineacion da la vuelta.
     CellManager styled = new_cell_manager((TermSize) { .x = 80, .y = 24 });
-    Editor styledEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+    Editor styledEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
 
     set_cell_content(&styled, 0, 0, "42");
     sheet_state(&styled)->cursor.x = 0;
@@ -411,60 +444,93 @@ int main(void) {
 
     free_cell_manager(&painted);
 
-    // La fila de las herramientas: se ve, cada boton es la tecla de siempre, y se
+    // La barra de las herramientas, arriba: se ven las secciones, el desplegable
+    // junta lo que hay dentro, y cada boton sigue siendo la tecla de siempre. Se
     // quita con el Ctrl+K para quien viva a teclado.
     CellManager tooled = new_cell_manager((TermSize) { .x = 80, .y = 24 });
-    Editor tooledEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+    Editor tooledEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
 
     set_cell_content(&tooled, 0, 0, "1");
 
     screen = draw(&tooled);
-    check(screen != NULL && strstr(screen, "tools:") != NULL, "la fila dice que son las herramientas");
-    check(screen != NULL && strstr(screen, "bold") != NULL && strstr(screen, "save") != NULL,
-          "y se ven los nombres de los botones");
+    check(screen != NULL && strstr(screen, "doc") != NULL && strstr(screen, "style") != NULL,
+          "la barra de arriba se pinta con sus secciones");
+    check(screen != NULL && strstr(screen, "bold") == NULL, "los nombres de los botones esperan dentro del desplegable");
     free(screen);
 
-    // Un boton es su tecla: el clic hace lo mismo que la mano.
+    // Colgar el desplegable de style: lo que se ve es lo que se puede elegir.
+    int barStarts[MENU_LIMIT];
+    menu_fit(80, barStarts);
+
+    Mouse onStyle = { CLICK_LEFT, true, barStarts[2], menu_row() };
+
+    handle_mouse(&tooledEditor, &tooled, &onStyle);
+    check(tooled.popup.active && tooled.popup.kind == POPUP_MENU && tooled.popup.section == 2,
+          "un clic en la barra cuelga el desplegable de la seccion");
+
+    screen = draw(&tooled);
+    check(screen != NULL && strstr(screen, "bold") != NULL && strstr(screen, "^B") != NULL,
+          "el desplegable trae los botones con su tecla escrita");
+    free(screen);
+
+    // Un boton es su tecla, flotando tambien.
     sheet_state(&tooled)->cursor.x = 0;
     sheet_state(&tooled)->cursor.y = 0;
 
-    handle_key(&tooledEditor, &tooled, tool_at(0).key);
-    check(cell_format(get_cell(&tooled, 0, 0)).bold == 1, "el boton de negrita manda el Ctrl+B");
+    Mouse onBold = { CLICK_LEFT, true, tooled.popup.x + 3, tooled.popup.y + 2 };
 
-    // Lo que hace la negrita ya se conto arriba: aqui se vuelve a dejar la hoja
-    // limpia, para mirar solo lo de la fila.
+    handle_mouse(&tooledEditor, &tooled, &onBold);
+    check(cell_format(get_cell(&tooled, 0, 0)).bold == 1, "el clic en el boton de negrita manda el Ctrl+B");
+    check(!tooled.popup.active, "y el desplegable se recoge solo");
+
     handle_key(&tooledEditor, &tooled, KEY_CTRL_B);
     sheet_state(&tooled)->dirty = false;
 
+    // El teclado también puede llegar: la seccion se elige con su nombre... y,
+    // mientras, la barra se esconde y se vuelve a poner.
     handle_key(&tooledEditor, &tooled, KEY_CTRL_K);
-    check(!tooled.showTools, "el Ctrl+K esconde la fila");
-    check_message(&tooled, "tools off", "y la barra lo dice cortito, para no tapar el nombre");
+    check(!tooled.showMenu, "el Ctrl+K esconde la barra");
+    check_message(&tooled, "tools off", "y la barra de estado lo dice cortito, para no tapar el nombre");
     check(!sheet_state(&tooled)->dirty, "esconderla no es cambiar la hoja");
 
     screen = draw(&tooled);
-    check(screen != NULL && strstr(screen, "tools:") == NULL, "escondida, la fila no se pinta");
+    check(screen != NULL && strstr(screen, "doc") == NULL, "escondida, la barra no se pinta");
     free(screen);
 
     handle_key(&tooledEditor, &tooled, KEY_CTRL_K);
-    check(tooled.showTools, "el Ctrl+K la vuelve a poner");
+    check(tooled.showMenu, "el Ctrl+K la vuelve a poner");
 
     screen = draw(&tooled);
-    check(screen != NULL && strstr(screen, "bold") != NULL, "y se vuelve a pintar entera");
+    check(screen != NULL && strstr(screen, "style") != NULL, "y se vuelve a pintar entera");
     free(screen);
+
+    // Con el desplegable puesto, un clic fuera lo cierra sin mover el cursor de
+    // la rejilla, que es lo que se espera de una cortina.
+    handle_mouse(&tooledEditor, &tooled, &onStyle);
+
+    Mouse outside = { CLICK_LEFT, true, 40, 10 };
+    unsigned int beforeX = sheet_state(&tooled)->cursor.x;
+    unsigned int beforeY = sheet_state(&tooled)->cursor.y;
+
+    handle_mouse(&tooledEditor, &tooled, &outside);
+    check(!tooled.popup.active, "un clic fuera cierra el desplegable");
+    check(sheet_state(&tooled)->cursor.x == beforeX && sheet_state(&tooled)->cursor.y == beforeY,
+          "y el clic absorbido no mueve el cursor");
 
     free_cell_manager(&tooled);
 
-    // El raton. La pantalla de pruebas es de 80x24 y la celda de 4x2, asi que la
-    // rejilla acaba en la fila 21, las herramientas son la 21 y las pestanas la 22.
+    // El raton. La pantalla de pruebas es de 80x24 y la celda de 4x2: arriba la
+    // barra, sus letras, la rejilla hasta la fila 21, las pestanas y la barra de
+    // estado.
     set_cell_size(4, 2);
 
     CellManager clicked = new_cell_manager((TermSize) { .x = 80, .y = 24 });
-    Editor clickedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+    Editor clickedEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
 
     set_cell_content(&clicked, 2, 2, "= 7");
     set_cell_content(&clicked, 0, 0, "1");
 
-    Mouse click = { CLICK_LEFT, true, 16, 8 };
+    Mouse click = { CLICK_LEFT, true, 16, 9 };
 
     handle_mouse(&clickedEditor, &clicked, &click);
     check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 2,
@@ -489,22 +555,32 @@ int main(void) {
           "un clic en la raya vertical no hace nada");
 
     click.column = 16;
-    click.row = 4;
+    click.row = 5;
     handle_mouse(&clickedEditor, &clicked, &click);
     check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 2,
           "un clic en la raya horizontal no hace nada");
 
-    // La cabecera de las letras tampoco.
+    // La cabecera de las letras tampoco: con la barra puesta, las letras bajan a
+    // la fila segunda.
     click.column = 11;
-    click.row = 0;
+    click.row = 1;
     handle_mouse(&clickedEditor, &clicked, &click);
     check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 2,
           "un clic en las letras de arriba no hace nada");
 
+    // Y lo de encima de las letras es la barra: si no cae en ninguna seccion,
+    // tampoco.
+    click.column = 40;
+    click.row = menu_row();
+    handle_mouse(&clickedEditor, &clicked, &click);
+    check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 2,
+          "un clic en el aire de la barra no hace nada");
+    check(!clicked.popup.active, "ni siquiera cuelga un desplegable");
+
     // El doble clic entra a editar la celda. La primera vez que se clica encima
     // no: la memoria del clic anterior era de otra celda.
     click.column = 16;
-    click.row = 11;
+    click.row = 12;
     handle_mouse(&clickedEditor, &clicked, &click);
     check(!sheet_state(&clicked)->editing, "el primero se queda en mover el cursor");
     check(sheet_state(&clicked)->cursor.x == 2 && sheet_state(&clicked)->cursor.y == 3,
@@ -516,7 +592,7 @@ int main(void) {
     handle_key(&clickedEditor, &clicked, KEY_ESC);
 
     // El clic derecho copia la celda.
-    Mouse right = { CLICK_RIGHT, true, 6, 2 };
+    Mouse right = { CLICK_RIGHT, true, 6, 3 };
 
     handle_mouse(&clickedEditor, &clicked, &right);
     check(sheet_state(&clicked)->cursor.x == 0 && sheet_state(&clicked)->cursor.y == 0,
@@ -534,17 +610,19 @@ int main(void) {
     handle_mouse(&clickedEditor, &clicked, &wheel);
     check(sheet_state(&clicked)->cursor.y == 0, "y hacia arriba sube");
 
-    // Un boton es su tecla.
-    int starts[TOOL_LIMIT];
+    // Un boton es su tecla, tambien colgado: el clic en la barra abre el
+    // desplegable.
+    int clickStarts[16];
 
-    tools_fit(80, starts);
+    menu_fit(80, clickStarts);
 
-    Mouse onTool = { CLICK_LEFT, true, starts[0] + 1, tools_row(&clicked, 24) };
+    Mouse onBar = { CLICK_LEFT, true, clickStarts[0], menu_row() };
 
-    handle_mouse(&clickedEditor, &clicked, &onTool);
-    check(cell_format(get_cell(&clicked, 0, 0)).bold == 1, "el clic en el boton de negrita pone la negrita");
+    handle_mouse(&clickedEditor, &clicked, &onBar);
+    check(clicked.popup.active && clicked.popup.section == 0, "un clic en la barra cuelga su desplegable");
 
-    handle_key(&clickedEditor, &clicked, KEY_CTRL_B);
+    handle_key(&clickedEditor, &clicked, KEY_ESC);
+    check(!clicked.popup.active, "y el Escape lo recoge");
 
     // Y el clic en una pestana cambia de hoja. La segunda pestana empieza despues
     // de la primera, que mide seis, y detras de la raya.
@@ -574,7 +652,7 @@ int main(void) {
     handle_key(&clickedEditor, &clicked, '5');
     handle_key(&clickedEditor, &clicked, '5');
 
-    Mouse elsewhere = { CLICK_LEFT, true, 16, 14 };
+    Mouse elsewhere = { CLICK_LEFT, true, 16, 15 };
 
     handle_mouse(&clickedEditor, &clicked, &elsewhere);
     check(!sheet_state(&clicked)->editing, "el clic en otra celda termina la escritura");
@@ -590,28 +668,28 @@ int main(void) {
 
     handle_mouse(&clickedEditor, &clicked, &onGrid);
     check(sheet_state(&clicked)->cursor.y == 6,
-          "sin la fila de las herramientas, ahi abajo tambien hay celdas");
+          "sin la barra, ahi abajo tambien hay celdas");
 
-    // Escondidas las herramientas, la fila de las pestanas lleva el chip que las
-    // devuelve: es lo que se ve, y lo que se clica.
+    // Escondida la barra, la fila de las pestanas lleva el chip que la devuelve:
+    // es lo que se ve, y lo que se clica.
     sheet_state(&clicked)->dirty = false;
 
     screen = draw_path(&clicked, "notas.clex");
     check(screen != NULL && strstr(screen, "[tools]") != NULL,
-          "con la fila quitada, la de las pestanas lleva el chip");
+          "con la barra quitada, la de las pestanas lleva el chip");
     free(screen);
 
     Mouse onChip = { CLICK_LEFT, true, tools_chip_column(80) + 1, sheet_row(24) };
 
     handle_mouse(&clickedEditor, &clicked, &onChip);
-    check(clicked.showTools, "un clic en el chip vuelve a poner la fila");
+    check(clicked.showMenu, "un clic en el chip vuelve a poner la barra");
     check(!sheet_state(&clicked)->dirty, "y traerla no cuenta como un cambio de la hoja");
 
-    // Puesta la fila, el chip no se ve: el boton de quitarla esta en la propia
-    // fila.
+    // Puesta la barra, el chip no se ve: el boton de quitarla esta en la propia
+    // barra.
     screen = draw_path(&clicked, "notas.clex");
-    check(screen != NULL && strstr(screen, "[tools]") == NULL, "con la fila puesta, el chip no se ve");
-    check(screen != NULL && strstr(screen, "tools:") != NULL, "y la fila se vuelve a pintar");
+    check(screen != NULL && strstr(screen, "[tools]") == NULL, "con la barra puesta, el chip no se ve");
+    check(screen != NULL && strstr(screen, "edits") != NULL, "y la barra se vuelve a pintar");
     free(screen);
 
     // El otro tirador es el nombre del archivo de la barra de estado.
@@ -624,24 +702,98 @@ int main(void) {
     Mouse onName = { CLICK_LEFT, true, 80 - (int) strlen("notas.clex") - 1, status_row(24) };
 
     handle_mouse(&clickedEditor, &clicked, &onName);
-    check(clicked.showTools, "un clic en el nombre del archivo lo trae de vuelta");
+    check(clicked.showMenu, "un clic en el nombre del archivo lo trae de vuelta");
 
-    // Un clic en otra parte de la barra no la mueve.
+    // Un clic en otra parte de la barra de estado no la mueve.
     handle_key(&clickedEditor, &clicked, KEY_CTRL_K);
 
-    Mouse onBar = { CLICK_LEFT, true, 2, status_row(24) };
+    Mouse onStatus = { CLICK_LEFT, true, 2, status_row(24) };
 
-    handle_mouse(&clickedEditor, &clicked, &onBar);
-    check(!clicked.showTools, "un clic en otra parte de la barra no la trae");
+    handle_mouse(&clickedEditor, &clicked, &onStatus);
+    check(!clicked.showMenu, "un clic en otra parte de la barra de estado no la trae");
 
     free_cell_manager(&clicked);
     set_cell_size(4, 2);
+
+    // Guardar con otro nombre y abrir: dos ventanas con un campo de texto, que
+    // son lo unico del editor donde se escribe un nombre de archivo.
+    const char *written = "hoja-de-prueba.clex";
+
+    CellManager dialog = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+    Editor dialogEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
+
+    set_cell_content(&dialog, 0, 0, "1");
+
+    handle_key(&dialogEditor, &dialog, KEY_CTRL_G);
+    check(dialog.popup.active && dialog.popup.kind == POPUP_INPUT && dialog.popup.target == POP_TARGET_SAVE_AS,
+          "el Ctrl+G abre el campo de guardar con otro nombre");
+
+    screen = draw(&dialog);
+    check(screen != NULL && strstr(screen, "save as") != NULL, "la ventana dice lo que esta pidiendo");
+    free(screen);
+
+    // Un Enter sin nada escrito no guarda en ninguna parte.
+    handle_key(&dialogEditor, &dialog, KEY_ENTER);
+    check(!dialog.popup.active, "Enter sin nombre cierra la ventana");
+    check_message(&dialog, "nothing to write", "y no guarda en ninguna parte");
+    check(dialogEditor.savePath[0] == '\0', "el sitio de guardar sigue sin estar");
+
+    // Escape deja el campo como estaba.
+    handle_key(&dialogEditor, &dialog, KEY_CTRL_G);
+    type_text(&dialog, &dialogEditor, "borrable");
+    handle_key(&dialogEditor, &dialog, KEY_ESC);
+    check(!dialog.popup.active && dialogEditor.savePath[0] == '\0', "Escape cancela el nombre escrito");
+
+    // Y ahora el nombre de verdad, con su Extension.
+    handle_key(&dialogEditor, &dialog, KEY_CTRL_G);
+    type_text(&dialog, &dialogEditor, written);
+    handle_key(&dialogEditor, &dialog, KEY_ENTER);
+
+    check(!dialog.popup.active, "Enter cierra la ventana");
+    check(strcmp(dialogEditor.savePath, written) == 0, "y guardar va a ese nombre desde ahora");
+
+    {
+        FILE *probe = fopen(written, "rb");
+
+        check(probe != NULL, "el archivo sale escrito donde se dijo");
+
+        if (probe != NULL) {
+            fclose(probe);
+        }
+    }
+
+    check(!sheet_any_dirty(&dialog), "lo guardado deja de estar sin guardar");
+
+    // Abrir: el campo sale con la carpeta de delante, y Enter cambia de archivo.
+    handle_key(&dialogEditor, &dialog, KEY_CTRL_Q);
+    check(dialog.popup.active && dialog.popup.kind == POPUP_INPUT && dialog.popup.target == POP_TARGET_OPEN,
+          "el Ctrl+Q abre el campo de abrir");
+
+    handle_key(&dialogEditor, &dialog, KEY_BACKSPACE);
+    type_text(&dialog, &dialogEditor, written);
+    handle_key(&dialogEditor, &dialog, KEY_ENTER);
+
+    check(strcmp(dialogEditor.path, written) == 0, "Enter abre el nombre escrito");
+    check_content(&dialog, 0, 0, "1", "y la hoja es la del archivo");
+    check(strcmp(dialogEditor.savePath, written) == 0, "y guardar sigue yendo al mismo sitio");
+
+    // Con cambios sin guardar, abrir se niega: no se pisa el trabajo de uno.
+    edit_cell_content(&dialog, 1, 0, "2");
+
+    handle_key(&dialogEditor, &dialog, KEY_CTRL_Q);
+    type_text(&dialog, &dialogEditor, written);
+    handle_key(&dialogEditor, &dialog, KEY_ENTER);
+    check_message(&dialog, "unsaved changes: Ctrl+S before opening", "abrir con cambios pide guardar antes");
+    check(!dialog.popup.active, "y la ventana se cierra sin abrir nada");
+
+    free_cell_manager(&dialog);
+    remove(written);
 
     // El autocompletado: el tabulador escribe la palabra del lenguaje que falta,
     // la palabra de la hoja cuando no hay mas que una, y va pasando por las
     // candidatas cuando hay varias que empiezan igual.
     CellManager completed = new_cell_manager((TermSize) { .x = 80, .y = 24 });
-    Editor completedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+    Editor completedEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
 
     set_cell_content(&completed, 0, 0, "123");
     set_cell_content(&completed, 0, 1, "hola");
@@ -742,7 +894,7 @@ int main(void) {
 
     // Las teclas de las hojas: anadir, cambiar, quitar.
     CellManager book = new_cell_manager((TermSize) { .x = 80, .y = 24 });
-    Editor bookEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+    Editor bookEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
 
     set_cell_content(&book, 0, 0, "1");
 
@@ -785,7 +937,7 @@ int main(void) {
     // El nombre de la hoja, en una con el nombre de empezar: el Ctrl+F escribe
     // en la pestana, Enter lo fija y Escape lo deja como estaba.
     CellManager named = new_cell_manager((TermSize) { .x = 80, .y = 24 });
-    Editor namedEditor = { .path = NULL, .running = true, .quitting = false, .reloading = false };
+    Editor namedEditor = { .path = "", .running = true, .quitting = false, .reloading = false };
 
     handle_key(&namedEditor, &named, KEY_CTRL_F);
     check(named.renaming, "el Ctrl+F empieza a escribir el nombre");

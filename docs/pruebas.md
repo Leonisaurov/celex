@@ -7,8 +7,9 @@ build.bat test          Windows, con MSVC
 make test               POSIX, con gcc
 ```
 
-Salen cinco grupos y un runner de casos, en este orden; si alguno falla se para y
-dice `Fallaron las pruebas.` / `FALLO`. Cada grupo imprime una sola línea de
+Salen cinco grupos y un runner de casos, en este orden; si alguno falla se para: los
+casos pinchan marcando `FALLO`, y el aviso final `Fallaron las pruebas.` lo da solo
+`build.bat` (a `make` le basta con cortar). Cada grupo imprime una sola línea de
 resumen: `9 casos, 0 fallos`, `edicion: todo correcto`, `teclas: ...`, `entrada:
 ...`, `editor: ...`, `consola: ...`. Los avisos de cada prueba son en español.
 
@@ -41,15 +42,16 @@ Los casos de hoy:
 | `vacia` | una asignación sin valor: esa celda no se escribe |
 | `lenguaje` | todo el lenguaje, corrido como programa |
 
-## Las cuatro pruebas del editor
+## Las cinco pruebas del editor
 
 **`editor_test`** — el gestor de celdas y el documento, sin terminal. Llama a las
 funciones y mira lo que sale: editar una celda, cursor UTF-8, deshacer y rehacer,
 copiar y pegar, invalidar el valor, evaluar celda a celda, los fotogramas del
 deslizamiento, los límites del tamaño, las hojas y sus nombres, cuanto cabe en la
-fila de las pestañas, el ida y vuelta del `.clex` (cabecera, tema, tamaño, hojas,
-cursor, formatos, campos que no se conocen, una línea de formato rota), la
-alineación, la fila de herramientas y los caminos de las dos extensiones.
+fila de las pestañas, el ida y vuelta del `.clex` (cabecera, hojas, cursor,
+formatos, campos que no se conocen, una línea de formato rota), las preferencias
+del usuario (escribir, leer, y que una línea rara no rompa el archivo), la
+alineación, la barra de herramientas, las ventanas flotantes y los caminos de las dos extensiones.
 
 **`keys_test`** — las teclas y los clics, sin terminal: se llama a `handle_key` y a
 `handle_mouse`, las mismas funciones del programa. Cubre escribir y confirmar,
@@ -74,15 +76,18 @@ binario con la entrada en ese archivo y la salida en otro. Después mira lo que 
 en los archivos (el `.cle` exportado y el `.clex` guardado) y lo que se dibujó.
 Cubre: copiar, pegar, exportar y guardar; el pegado desde la terminal; que lo que
 está fuera de la vista no se dibuja y que la vista se desliza hasta la celda del
-cursor; los formatos y la fila escondida; los colores del tema; y las dos hojas con
-sus pestañas. En Windows lee además el portapapeles del sistema, para comprobar que
-lo copiado llega ahí.
+cursor; los formatos y la fila escondida, que ahora queda en las preferencias del
+usuario; los colores del tema; y las dos hojas con sus pestañas. Cada corrida
+estrena una casa temporal, para que lo que elija una no se lo deje a la siguiente
+ni toque la del usuario; al terminar la prueba borra las casas que creó, con el
+archivo de las preferencias y la plantilla de los temas dentro. En Windows lee
+además el portapapeles del sistema, para comprobar que lo copiado llega ahí.
 
 **`console_test`** — lo mismo dentro de una **consola de verdad**: en Windows una
 pseudoconsola (`CreatePseudoConsole`, 80×24) y en POSIX un dispositivo pseudo-terminal.
 Es la prueba de lo que se usa todos los días: las teclas con Ctrl se mandan como las
 manda una terminal, y el editor tiene que leerlas, dibujar y salir sin dejar la
-terminal rota. Comueba que el editor contesta y sale, que el clic mueve el cursor,
+terminal rota. Comprueba que el editor contesta y sale, que el clic mueve el cursor,
 que se guardan los dos archivos, que lo pegado aparece, y que el pegado no pone la
 pantalla en modo edición.
 
@@ -114,11 +119,11 @@ una tecla que contesta tarde.
 
 ## La costumbre de comprobar la comprobación
 
-Ninguna afirmaciÃ³n vale nada si no falla cuando debe. Cada prueba nueva se
+Ninguna afirmación vale nada si no falla cuando debe. Cada prueba nueva se
 comprueba rompiendo a propósito lo que mira, y viendo que pincha: quitar la línea
 esperada de un caso, no invalidar la pantalla al cambiar de tema, hacer
 siempre-planos los fotogramas del deslizamiento, aceptar colores fuera de la
-paleta, borrar el dibujo de la fila de herramientas, o hacer que el sitio del
+paleta, borrar el dibujo de la barra de herramientas, o hacer que el sitio del
 nombre del archivo conteste siempre sí y siempre no. Si la prueba sigue pasando, la
 prueba no decía nada.
 
@@ -126,6 +131,6 @@ prueba no decía nada.
 
 - Como se compila cada binario de prueba y con que: [organizacion.md](organizacion.md).
 - Lo que miran `screen` y `bench`, que sale de ese pintado: [pantalla.md](pantalla.md).
-- Que comprueba cada grupo: las cuatro pruebas del editor estan partidas por tema en [teclas-y-raton.md](teclas-y-raton.md), [hojas-historial-y-entrada.md](hojas-historial-y-entrada.md) y [archivos.md](archivos.md).
+- Que comprueba cada grupo: las cinco pruebas del editor estan partidas por tema en [teclas-y-raton.md](teclas-y-raton.md), [hojas-historial-y-entrada.md](hojas-historial-y-entrada.md) y [archivos.md](archivos.md).
 
 Volver al indice: [docs/README.md](README.md).

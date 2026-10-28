@@ -6,9 +6,12 @@
 char* ref_column_name(unsigned int x) {
     char buffer[8];
     int length = 0;
-    unsigned int index = x;
+    // Las columnas son base 26 biyectiva, sin cero: A vale 1 y AA 27. Se pasa x
+    // a 1-based y se resta antes de cada digito para que Z (26) no se lea como AA.
+    unsigned int index = x + 1;
 
     do {
+        index--;
         buffer[length++] = (char) ('A' + (index % 26));
         index = index / 26;
     } while (index > 0);
@@ -27,7 +30,7 @@ char* ref_to_string(unsigned int x, unsigned int y) {
     size_t size = strlen(columns);
 
     char *ref = (char *) malloc(size + 24);
-    sprintf(ref, "%s%u", columns, y + 1);
+    snprintf(ref, size + 24, "%s%u", columns, y + 1);
     free(columns);
 
     return ref;

@@ -6,7 +6,7 @@ Un trabajo de celex vive en dos ficheros, y cada uno es de uno.
 |---|---|---|
 | qué es | un programa de celex script | el documento del editor |
 | para quién | para que lo lea y lo escriba una persona | para que lo lea el editor |
-| contiene | una asignación por celda | hojas, formatos, tema, tamaños, dónde estaba el cursor |
+| contiene | una asignación por celda | hojas, formatos y dónde estaba el cursor |
 | qué lo entiende | `celexs` (el intérprete) y `load_script` | `document_load` |
 | a mano | sí, es limpio y simple | no: está delimitado por bloques, y no tiene comentarios |
 
@@ -22,11 +22,12 @@ C1 = "hola"
 ```
 
 Al **exportar** (`Ctrl+E`) las celdas van ordenadas **por columna y después por
-fila**, que es el orden en que el lenguaje puede calcularlas: una celda ve las de
-encima en su columna y las de las columnas de la izquierda. Las celdas sin contenido
-no escriben línea. Del editor salen también las asignaciones a variables y los
-`print` que estuvieran en el fuente, porque el `.cle` es un programa: se importa lo
-que son celdas y se cuentan como ignoradas las demás.
+fila**. No hace falta que ese orden respete las dependencias: al evaluar, la capa de
+hoja reordena las asignaciones de celda en el orden que el lenguaje puede calcular.
+Las celdas sin
+contenido no escriben línea. Del editor solo salen celdas: las asignaciones a
+variables y los `print` que estuvieran en el fuente no vuelven a salir, porque nunca
+llegaron al editor — al importar se cuentan como ignoradas.
 
 Al **importar** se queda con **una sola hoja**, que se llama como el archivo sin
 extensión, y se olvida lo que hubiera en el editor antes. Las líneas que no tienen
@@ -42,9 +43,6 @@ cada línea que dice qué es.
 
 ```
 celex-document 1
-theme oscuro
-cell-size 4 2
-tools off
 sheet "numeros"
   select E3
   scroll 15 0
@@ -70,16 +68,14 @@ deja de abrirse porque traiga un campo nuevo.
 Un documento **de una versión más nueva** que el editor se abre igual: se lee lo que
 se entiende y las líneas sueltas se cuentan como ignoradas.
 
-### Los campos de arriba
+### Los campos que ya no están
 
-| Línea | Qué hace | Si viene mal |
-|---|---|---|
-| `theme <nombre>` | pone el tema (`normal`, `oscuro`, `claro`), sin comillas | se ignora y se cuenta |
-| `cell-size <ancho> <alto>` | el tamaño de celda; se recorta a sus límites (2 a 40, 1 a 8) | números negativos se ignoran y se cuentan |
-| `tools off` | la fila de herramientas estaba quitada | cualquier otra palabra se ignora |
-
-`tools off` **solo se escribe cuando está quitada**: sin la línea, la fila está
-puesta. Es la única línea opcional de arriba.
+Los campos que tenía el documento en la primera versión —`theme`, `cell-size` y
+`tools`— ya no son de la hoja: pasaron a las preferencias del usuario, en
+`$HOME/.config/celex/config` (ver [temas-y-formatos.md](temas-y-formatos.md) y el
+README). Un archivo viejo que todavía los traiga se abre igual: esas líneas se leen
+y se dejan estar, sin contarlas como ignoradas. El tema y el tamaño que valen son
+los de la configuración, no los del archivo.
 
 ### Dentro de cada hoja
 
@@ -150,13 +146,15 @@ Un punto del nombre no es una extensión si cae dentro de un directorio:
 ## Qué se pierde en el viaje
 
 De `.clex` a `.cle` se quedan fuera todo lo que no sea el fuente de una celda:
-**los formatos**, **las demás hojas** (solo se exporta la que se ve), el tema, el
-tamaño de las celdas, la fila de herramientas, dónde estaba el cursor y cuánto
-deslizada la vista.
+**los formatos**, **las demás hojas** (solo se exporta la que se ve), dónde estaba
+el cursor y cuánto deslizada la vista. El tema, el tamaño de las celdas y la barra
+de herramientas no están en el documento: son preferencias del usuario y el `.cle`
+tampoco las lleva.
 
 De `.cle` a `.clex` se pierde todo lo que no sea una asignación de celda: las
 variables, los `print` y las sentencias del programa no se importan (se cuentan como
-ignoradas), y salen solo si el `.cle` se exporta desde un editor que las tenía.
+ignoradas), así que tampoco vuelven a salir al exportar. El viaje de vuelta solo
+devuelve celdas.
 
 Por eso son dos archivos: `Ctrl+E` enseña el guion limpio para editarlo a mano o
 para correrlo con `celexs`, y `Ctrl+S` guarda la hoja de trabajo entera.

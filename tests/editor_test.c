@@ -5,13 +5,29 @@
 
 #include "cell_manager.h"
 #include "document.h"
+#include "preferences.h"
+#include "ref.h"
 #include "sheet.h"
 #include "theme.h"
 #include "tools.h"
 
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <direct.h>
+#define TT_MKDIR(p) _mkdir(p)
+#define TT_RMDIR(p) _rmdir(p)
+#define TT_SETENV(name, value) _putenv_s((name), (value))
+#else
+#include <sys/stat.h>
+#include <unistd.h>
+#define TT_MKDIR(p) mkdir((p), 0755)
+#define TT_RMDIR(p) rmdir(p)
+#define TT_SETENV(name, value) setenv((name), (value), 1)
+#endif
 
 static int failures = 0;
 
@@ -46,6 +62,187 @@ static void check_value(CellManager *manager, unsigned int x, unsigned int y, co
 
     printf("  FALLO: %s (esperado \"%s\", obtenido \"%s\")\n", what, wanted, value);
     failures++;
+}
+
+static void write_text(const char *path, const char *text) {
+    FILE *file = fopen(path, "w");
+
+    if (file == NULL) {
+        return;
+    }
+
+    fputs(text, file);
+    fclose(file);
+}
+
+// Los temas que define el usuario, leidos de una carpeta de pruebas en el
+// temporal. Se mira el numero, el nombre, y las secuencias que salen.
+static void test_custom_themes(void) {
+    const char *base = getenv("TEMP");
+
+    if (base == NULL || base[0] == '\0') {
+        base = getenv("TMP");
+    }
+
+    if (base == NULL || base[0] == '\0') {
+        base = getenv("TMPDIR");
+    }
+
+    if (base == NULL || base[0] == '\0') {
+        base = "/tmp";
+    }
+
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/celex_themes_test", base);
+    TT_MKDIR(dir);
+
+    char valiente[1024], oculto[1024], roto[1024], duplicado[1024];
+    snprintf(valiente, sizeof(valiente), "%s/valiente.theme", dir);
+    snprintf(oculto, sizeof(oculto), "%s/_oculto.theme", dir);
+    snprintf(roto, sizeof(roto), "%s/roto.theme", dir);
+    snprintf(duplicado, sizeof(duplicado), "%s/duplicado.theme", dir);
+
+    write_text(valiente,
+        "# un tema para las pruebas\n"
+        "name valiente\n"
+        "\n"
+        "background #102030 on #010203   # el vacio\n"
+        "cursor #fff on #00ff00 bold\n"
+        "error #ff0000 reverse\n"
+        "tools #123456 on #654321\n");
+    write_text(oculto, "name escondido\ngrid #123456\n");
+    write_text(roto, "nombre sin-acento\n");
+    write_text(duplicado, "name oscuro\nbackground #000000\n");
+
+    int base_count = theme_count();
+
+    int added = theme_load_themes_dir(dir);
+    check(added == 2, "carga los validos y salta el duplicado y el oculto");
+    check(theme_count() == base_count + 2, "la lista crece solo con los temas nuevos");
+
+    check(theme_set_by_name("valiente") != 0, "un tema del usuario se pone por su nombre");
+    check(strcmp(style_sequence(STYLE_NONE), "\x1b[0;38;2;16;32;48;48;2;1;2;3m") == 0, "el fondo sale en color verdadero");
+    check(strcmp(style_sequence(STYLE_CURSOR), "\x1b[0;1;38;2;255;255;255;48;2;0;255;0m") == 0, "la seleccion junta negrita, letra y fondo");
+    check(strcmp(style_sequence(STYLE_ERROR), "\x1b[0;7;38;2;255;0;0m") == 0, "el error con la vuelta va sin fondo");
+    check(strcmp(style_sequence(STYLE_TOOLS), "\x1b[0;38;2;18;52;86;48;2;101;67;33m") == 0,
+          "la barra de las herramientas tiene su fondo");
+    check(strcmp(style_sequence(STYLE_HEADER), "\x1b[0m") == 0, "lo que no se escribe queda apagado");
+
+    check(theme_set_by_name("roto") != 0, "un archivo sin nombre toma el del archivo");
+    check(strcmp(theme_name(), "roto") == 0, "y asi se llama");
+
+    check(theme_set_by_name("escondido") == 0, "el tema con guion bajo delante no se carga");
+
+    check(theme_set_by_name("oscuro") != 0, "un nombre repetido no pisa al integrado");
+    check(strcmp(style_sequence(STYLE_GRID), "\x1b[0;90m") == 0, "sigue mandando el oscuro de siempre");
+
+    theme_set_by_name("normal");
+    theme_free_user();
+    check(theme_count() == base_count, "olvidar los del usuario deja la lista como estaba");
+
+    remove(valiente);
+    remove(oculto);
+    remove(roto);
+    remove(duplicado);
+    TT_RMDIR(dir);
+}
+
+// Las preferencias del usuario viven en `<HOME>/.config/celex/config`, asi que
+// se apunta HOME a una carpeta del temporal para no tocar las de verdad.
+static void test_preferences(void) {
+    const char *base = getenv("TEMP");
+
+    if (base == NULL || base[0] == '\0') {
+        base = getenv("TMP");
+    }
+
+    if (base == NULL || base[0] == '\0') {
+        base = getenv("TMPDIR");
+    }
+
+    if (base == NULL || base[0] == '\0') {
+        base = "/tmp";
+    }
+
+    char home[1024];
+    snprintf(home, sizeof(home), "%s/celex_prefs_test", base);
+    TT_MKDIR(home);
+
+    char oldHome[1024];
+    const char *previous = getenv("HOME");
+    snprintf(oldHome, sizeof(oldHome), "%s", previous != NULL ? previous : "");
+    bool hadHome = previous != NULL;
+
+    TT_SETENV("HOME", home);
+
+    theme_set_by_name("normal");
+    set_cell_size(4, 2);
+
+    CellManager doc = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+
+    check(preferences_load(&doc) == 0, "sin archivo de preferencias no hay nada que leer");
+
+    check(theme_set_by_name("oscuro") != 0, "el tema de las preferencias existe");
+    set_cell_size(6, 3);
+    doc.showMenu = false;
+    doc.showValues = true;
+
+    check(preferences_save(&doc) == 1, "las preferencias se escriben en la configuracion");
+    check(preferences_save(&doc) == 0, "sin cambios no se vuelve a escribir");
+
+    // Se vuelve a lo de empezar y se leen: tiene que volver todo lo elegido.
+    theme_set_by_name("normal");
+    set_cell_size(4, 2);
+
+    CellManager back = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+
+    check(preferences_load(&back) == 1, "las preferencias se leen al arrancar");
+    check(strcmp(theme_name(), "oscuro") == 0, "vuelve el tema elegido");
+    check(cellWidth == 6 && cellHeight == 3, "vuelve el tamano de las celdas");
+    check(!back.showMenu, "vuelve la barra de las herramientas escondida");
+    check(back.showValues, "y la vista de los valores");
+
+    // Lo que no se entiende no rompe el archivo: las lineas que si valen se leen.
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/.config/celex/config", home);
+
+    write_text(path, "campo-raro 7\ntheme oscuro\ncell-size 8 2\ntools on\nvalues off\n");
+
+    CellManager edited = new_cell_manager((TermSize) { .x = 80, .y = 24 });
+
+    check(preferences_load(&edited) == 1, "un archivo con lineas raras se lee igual");
+    check(cellWidth == 8 && cellHeight == 2, "y aplica las lineas que entiende");
+    check(edited.showMenu, "la barra se puede volver a poner");
+    check(!edited.showValues, "y la vista de los valores apagar");
+
+    theme_set_by_name("normal");
+    set_cell_size(4, 2);
+
+    free_cell_manager(&edited);
+    free_cell_manager(&back);
+    free_cell_manager(&doc);
+
+    if (hadHome) {
+        TT_SETENV("HOME", oldHome);
+    } else {
+        TT_SETENV("HOME", "");
+    }
+
+    remove(path);
+
+    char themes[1024];
+    snprintf(themes, sizeof(themes), "%s/.config/celex/themes", home);
+    TT_RMDIR(themes);
+
+    char conf[1024];
+    snprintf(conf, sizeof(conf), "%s/.config/celex", home);
+    TT_RMDIR(conf);
+
+    char dotConfig[1024];
+    snprintf(dotConfig, sizeof(dotConfig), "%s/.config", home);
+    TT_RMDIR(dotConfig);
+
+    TT_RMDIR(home);
 }
 
 int main(void) {
@@ -337,17 +534,14 @@ int main(void) {
     check(sheet_add(&doc, "gastos") > 0, "el documento tiene otra hoja");
     set_cell_content(&doc, 0, 0, "30");
 
-    set_cell_size(6, 3);
-    check(theme_set_by_name("oscuro") != 0, "el tema se puede poner por su nombre");
-    doc.showTools = false;
-
     char *text = document_source(&doc);
     check(text != NULL, "el documento se puede escribir");
 
     if (text != NULL) {
         check(strstr(text, "celex-document 1") != NULL, "empieza con la cabecera y la version");
-        check(strstr(text, "cell-size 6 3") != NULL, "dice el tamano de las celdas");
-        check(strstr(text, "theme oscuro") != NULL, "dice el tema");
+        check(strstr(text, "theme") == NULL, "el tema no es de la hoja y no va en el documento");
+        check(strstr(text, "cell-size") == NULL, "ni el tamano de las celdas");
+        check(strstr(text, "tools") == NULL, "ni la barra de las herramientas");
         check(strstr(text, "sheet \"gastos\"") != NULL, "cada hoja abre su bloque");
         check(strstr(text, "cell A1 \"30\"") != NULL, "y dentro van sus celdas");
         check(strstr(text, "cell A1 \"\\\"hola\\\"\"") != NULL, "las comillas del fuente salen escapadas");
@@ -355,7 +549,6 @@ int main(void) {
         check(strstr(text, "  scroll 15 0\n") != NULL, "y lo deslizado que llevaba la vista");
         check(strstr(text, "format B4 align=right bold fg=3\n") != NULL, "el formato sale en su linea");
         check(strstr(text, "format H2 underline bg=4\n") != NULL, "y una celda vacia lleva solo su formato");
-        check(strstr(text, "tools off\n") != NULL, "y dice que las herramientas estan escondidas");
 
         CellManager back = new_cell_manager((TermSize) { .x = 80, .y = 24 });
         int ignored = -1;
@@ -365,9 +558,9 @@ int main(void) {
         check(sheet_count(&back) == 2, "vuelven las dos hojas");
         check(strcmp(sheet_name_at(&back, 0), "Sheet1") == 0, "la primera hoja trae su nombre");
         check(strcmp(sheet_name_at(&back, 1), "gastos") == 0, "y la segunda el suyo");
-        check(cellWidth == 6 && cellHeight == 3, "vuelve el tamano de las celdas");
-        check(strcmp(theme_name(), "oscuro") == 0, "vuelve el tema");
-        check(!back.showTools, "vuelve la fila de las herramientas escondida");
+        check(cellWidth == 4 && cellHeight == 2, "el documento no toca el tamano de las celdas");
+        check(strcmp(theme_name(), "normal") == 0, "ni el tema");
+        check(back.showMenu, "ni la barra de las herramientas");
 
         // Al abrir, la que se ve es la primera, como en el editor.
         check_content(&back, 0, 0, "\"hola\"", "el fuente con comillas vuelve desenredado");
@@ -435,7 +628,7 @@ int main(void) {
 
     check(rotaFormat.bold == 1 && rotaFormat.underline == 1, "lo que si valia se pone");
     check(rotaFormat.align == ALIGN_DEFAULT && rotaFormat.fg == 0, "lo que no, no");
-    check(rota.showTools, "un documento sin la linea de las herramientas las muestra");
+    check(rota.showMenu, "un documento sin la linea de las herramientas las muestra");
 
     free_cell_manager(&rota);
 
@@ -456,31 +649,32 @@ int main(void) {
 
     set_cell_size(4, 2);
 
-    // La fila de las herramientas: lo que se pinta es lo que se clica, y lo que
+    // La barra de las herramientas: lo que se pinta es lo que se clica, y lo que
     // no cabe no se pinta ni se clica.
-    int starts[TOOL_LIMIT];
-    int fitted = tools_fit(80, starts);
+    int starts[MENU_LIMIT];
+    int fitted = menu_fit(80, starts);
 
-    check(fitted > 0 && fitted <= tool_count(), "en ochenta columnas caben algunas herramientas");
-    check(starts[0] == tools_label_width(), "la primera empieza despues del nombre de la fila");
+    check(fitted > 0 && fitted <= menu_count(), "en ochenta columnas caben algunas secciones");
+    check(starts[0] == MENU_MARGIN, "la primera deja el aire de la izquierda");
 
     for (int i = 0; i < fitted; i++) {
-        int size = (int) strlen(tool_at(i).name);
+        MenuSection section = menu_at(i);
+        int size = (int) strlen(section.label);
 
-        check(starts[i] + size + 2 <= 80, "y cada boton cabe entero en la pantalla");
-        check(tool_at_column(80, starts[i]) == i, "un boton se clica donde empieza");
-        check(tool_at_column(80, starts[i] + size + 1) == i, "y en su ultima letra");
+        check(size >= 3, " cada seccion se puede leer");
+        check(starts[i] + size <= 80, "y cada nombre cabe entero en la pantalla");
+        check(menu_at_column(80, starts[i]) == i, "una seccion se clica donde empieza");
+        check(menu_at_column(80, starts[i] + size - 1) == i, "y en su ultima letra");
 
         if (i > 0) {
             check(starts[i] > starts[i - 1], "y van una detras de otra");
         }
     }
 
-    check(tool_at_column(80, 0) == -1, "el nombre de la fila no es un boton");
-    check(tool_at_column(80, starts[fitted - 1] + (int) strlen(tool_at(fitted - 1).name) + 2) == -1,
-          "el hueco de despues del ultimo boton tampoco");
-    check(tools_fit(12, starts) == 0, "en una pantalla muy corta no cabe ninguna");
-    check(tools_fit(200, starts) == tool_count(), "con sitio de sobra caben todas");
+    check(menu_at_column(80, 0) == -1, "el aire de la izquierda no es de ninguna seccion");
+    check(menu_at_column(80, 80 - 1) == -1 || fitted < menu_count(), "el aire del final no es de ninguna");
+    check(menu_fit(2, starts) == 0, "en una pantalla muy corta no cabe ninguna");
+    check(menu_fit(200, starts) == menu_count(), "con sitio de sobra caben todas");
 
     set_cell_size(4, 2);
     theme_set_by_name("normal");
@@ -499,6 +693,43 @@ int main(void) {
           "un nombre sin extension la coge detras");
     check(document_change_extension("carpeta.d/me", ".clex", other, sizeof(other)) && strcmp(other, "carpeta.d/me.clex") == 0,
           "un punto del camino no es una extension");
+
+    // El ida y vuelta de las referencias, sobre todo a partir de la Z, donde la
+    // columna es base 26 biyectiva: A vale 1, AA 27, AB 28.
+    {
+        static const struct { unsigned int x; const char *name; } column_names[] = {
+            { 0, "A" }, { 25, "Z" }, { 26, "AA" }, { 27, "AB" },
+            { 51, "AZ" }, { 52, "BA" }, { 701, "ZZ" }, { 702, "AAA" },
+        };
+
+        for (size_t i = 0; i < sizeof(column_names) / sizeof(column_names[0]); i++) {
+            char *got = ref_column_name(column_names[i].x);
+            check(got != NULL && strcmp(got, column_names[i].name) == 0, "el nombre de la columna es el que toca");
+            free(got);
+        }
+
+        int roundtrip_ok = 1;
+
+        for (unsigned int x = 0; x < 720; x++) {
+            char *name = ref_column_name(x);
+            char ref[16];
+            unsigned int px = 0;
+            unsigned int py = 0;
+
+            snprintf(ref, sizeof(ref), "%s1", name);
+
+            if (!ref_parse(ref, &px, &py) || px != x || py != 0) {
+                roundtrip_ok = 0;
+            }
+
+            free(name);
+        }
+
+        check(roundtrip_ok, "toda columna se escribe y se lee como la misma coordenada");
+    }
+
+    test_custom_themes();
+    test_preferences();
 
     free_cell_manager(&book);
 

@@ -18,22 +18,28 @@ una tercera cosa: mueve el texto, no lo pinta.
 | `STYLE_STATUS` | la barra de estado |
 | `STYLE_MESSAGE` | lo que la barra dice a la derecha |
 | `STYLE_ERROR` | lo que la barra dice cuando algo no salió |
+| `STYLE_TOOLS` | la barra de las herramientas, arriba |
 
 Son once (`STYLE_COUNT`), y cada tema tiene una secuencia ANSI para cada uno. Toda
 secuencia empieza apagando lo que hubiera (`\x1b[0m`), que es lo que hace que
 cambiar de estilo cueste una sola secuencia.
 
-## Los tres temas
+## Los cinco temas
 
-Se pasa de uno a otro con `Ctrl+T`, en este orden y dando la vuelta:
-`normal` → `oscuro` → `claro` → `normal`. La barra dice cual quedó puesto, porque
-la barra no lo muestra siempre.
+Con `Ctrl+T` sale una **ventana flotante** con todos ellos, en este orden y dando
+la vuelta: `normal` → `oscuro` → `claro` → `rose-pine` → `catppuccin` → `normal`.
+Cada nombre está escrito con su propio tema, y al moverse con las flechas o la rueda
+el tema se prueba en la pantalla entera al instante; `Enter` lo deja puesto y
+`Escape` deshace la prueba y cierra. La barra no muestra el tema nunca: lo dice el
+aviso mientras se prueba y al confirmar. Los temas que definas tu
+([abajo](#definir-tu-propio-tema)) salen detras de estos cinco, y caben todos.
 
 ### `normal` — el que tenía el editor antes de existir los temas
 
-Se apoya en los colores de la terminal. Solo dos partes llevan algo, y es el
-inverso: la celda seleccionada y la barra de estado. Todo lo demás queda sin color,
-así que una hoja en `normal` escribe casi nada de secuencias.
+Se apoya en los colores de la terminal. Solo tres partes llevan algo, y es el
+inverso: la celda seleccionada y las dos barras, la de las herramientas y la de
+estado. Todo lo demás queda sin color, así que una hoja en `normal` escribe casi
+nada de secuencias.
 
 ### `oscuro` — para una terminal oscura
 
@@ -46,6 +52,7 @@ así que una hoja en `normal` escribe casi nada de secuencias.
 | celda seleccionada | `\x1b[0;44;97m` | blanco sobre azul |
 | celda copiada | `\x1b[0;1;35m` | magenta en negrita |
 | barra de estado | `\x1b[0;104;97m` | blanco brillante sobre azul claro |
+| barra de herramientas | `\x1b[0;1;36;104m` | cian en negrita sobre azul claro |
 | mensaje | `\x1b[0;32m` | verde |
 | error | `\x1b[0;1;31m` | rojo en negrita |
 
@@ -60,16 +67,127 @@ así que una hoja en `normal` escribe casi nada de secuencias.
 | celda seleccionada | `\x1b[0;46;30m` | negro sobre cian |
 | celda copiada | `\x1b[0;1;35m` | magenta en negrita |
 | barra de estado | `\x1b[0;43;30m` | negro sobre amarillo |
+| barra de herramientas | `\x1b[0;1;34;43m` | azul en negrita sobre amarillo |
 | mensaje | `\x1b[0;34m` | azul |
 | error | `\x1b[0;1;31m` | rojo en negrita |
 
-El vacío no está en ninguna tabla: en los tres temas es el apagado, y es el hueco
-del cursor de texto dentro de la celda seleccionada, para que se vea dónde entra lo
-que se escriba.
+### `rose-pine` y `catppuccin` — en color verdadero
+
+Los dos últimos temas no usan los dieciseis colores de siempre sino **color
+verdadero** (`\x1b[38;2;r;g;b`), las paletas [Rose Pine](https://rosepinetheme.com)
+y [Catppuccin](https://catppuccin.com). Piden una terminal que lo entienda, como
+Windows Terminal; en una consola vieja los tonos salen apagados. La diferencia con
+los tres primeros es que aquí el vacío también lleva color: se pinta el fondo de la
+paleta en toda la pantalla, no solo en las partes sueltas.
+
+| Parte | `rose-pine` | `catppuccin` |
+|---|---|---|
+| vacío (fondo) | texto sobre noche `#191724` | texto sobre azul `#1e1e2e` |
+| rejilla | gris tenue | gris tenue |
+| cabeceras | iris en negrita | azul en negrita |
+| fuente de una celda | blanco rosado | claro |
+| valor de una celda | oro | melocotón |
+| celda seleccionada | letra oscura sobre rosa `#ebbcba` | letra oscura sobre azul `#89b4fa` |
+| celda copiada | rosa en negrita | rosa en negrita |
+| barra de estado | texto sobre superficie `#1f1d2e` | lavanda sobre manto `#181825` |
+| barra de herramientas | iris en negrita sobre superficie `#1f1d2e` | azul en negrita sobre manto `#181825` |
+| mensaje | espuma | verde |
+| error | rosa en negrita | rojo en negrita |
+
+El vacío sí está en las tablas de estos dos: es el fondo de la paleta, que se pinta
+en el resto de la pantalla y en el hueco del cursor de texto dentro de la celda
+seleccionada, para que se vea dónde entra lo que se escriba. En `normal`, `oscuro` y
+`claro` el vacío sigue siendo el apagado, sin fondo.
 
 Cambiar de tema olvida el fotograma y vuelve a pintar todo: el fotograma guarda
 *números* de estilo, no secuencias, así que si no se olvidara la comparación con el
 fotograma anterior no vería diferencia y no se repintaría nada.
+
+## Definir tu propio tema
+
+Ademas de los cinco que trae el programa, puedes poner los que quieras en la
+carpeta de configuracion: `$HOME/.config/celex/themes`. Cada archivo `*.theme`
+es un tema, y se leen al arrancar; salen detras de los integrados en la ventana de
+`Ctrl+T`, y el tema elegido se recuerda en `$HOME/.config/celex/config`, asi que
+el editor arranca con el la proxima vez.
+
+La carpeta se crea sola la primera vez, con una plantilla `_ejemplo.theme`. El
+guion bajo del principio hace que el cargador la ignore: renombrala (por ejemplo
+`medianoche.theme`) para que cuente.
+
+El archivo es texto, linea a linea. Todo lo que empieza por `#` es un comentario,
+y cada linea que pinta una parte tiene esta forma:
+
+```
+<parte> <#fg> [on <#bg>] [bold] [underline] [reverse]
+```
+
+Los colores van en hexadecimal, `#rgb` o `#rrggbb`, y se emiten en color
+verdadero. `on` pone el fondo; las tres palabras son atributos opcionales. Lo que
+no escribas se queda sin color. El nombre del tema sale de una linea `name ...`;
+si no la hay, se toma el del archivo (sin el `.theme`).
+
+Las once partes, que son las mismas del principio:
+
+| Se escribe | Es | La parte de la pantalla |
+|---|---|---|
+| `background` | `STYLE_NONE` | el vacio de la pantalla, y su fondo |
+| `grid` | `STYLE_GRID` | las rayas de la rejilla |
+| `header` | `STYLE_HEADER` | letras de columnas y numeros de filas |
+| `text` | `STYLE_TEXT` | el fuente de una celda |
+| `value` | `STYLE_VALUE` | el valor de una celda |
+| `cursor` | `STYLE_CURSOR` | la celda seleccionada |
+| `copied` | `STYLE_COPIED` | el borde de la celda copiada |
+| `status` | `STYLE_STATUS` | la barra de estado |
+| `message` | `STYLE_MESSAGE` | lo que la barra dice a la derecha |
+| `error` | `STYLE_ERROR` | lo que la barra dice cuando algo no salio |
+| `tools` | `STYLE_TOOLS` | la barra de las herramientas |
+
+Un tema entero, el de la plantilla:
+
+```
+name    medianoche
+
+background #cdd6f4 on #1e1e2e
+grid       #6c7086
+header     #89b4fa bold
+text       #cdd6f4
+value      #fab387
+cursor     #1e1e2e on #89b4fa bold
+copied     #f5c2e7 bold
+status     #b4befe on #181825
+message    #a6e3a1 on #181825
+error      #f38ba8 bold on #181825
+tools      #89b4fa bold on #181825
+```
+
+Un nombre repetido no pisa a un tema que ya este: gana el primero, y el archivo de
+mas se ignora. Un archivo que no se entiende tampoco rompe nada: la linea rara se
+cuenta y se deja estar, igual que en el resto del documento.
+
+## La configuracion del usuario
+
+Lo que se elige una vez y vale para todos los archivos no está en el `.clex`: está
+en `$HOME/.config/celex/config`. El editor lo lee al arrancar y lo escribe cada vez
+que cambia una de esas cosas:
+
+```
+celex-preferences 1
+theme oscuro
+cell-size 6 3
+tools off
+values on
+```
+
+| Línea | Qué guarda |
+|---|---|
+| `theme <nombre>` | el tema que se dejó con `Ctrl+T` |
+| `cell-size <ancho> <alto>` | el tamaño de celda de `]` `[` `}` `{` |
+| `tools on` / `tools off` | si la barra de herramientas está puesta |
+| `values on` / `values off` | si la rejilla muestra los valores o el fuente |
+
+Una línea que no se entiende se salta, así que el archivo se puede editar a mano y
+un campo de una versión futura no rompe los demás.
 
 ## El formato de una celda
 
@@ -84,7 +202,7 @@ Cinco campos, y `0` en todos significa «el tema» (`TUI/cell.h:32-38`):
 | `bg` | 0 (el del tema) o 1 a 16 | color del fondo |
 
 **Es una capa encima del fuente, no encima del valor**: el fuente de `A1` sigue
-siendo `= 1` y el lenguaje no ve nada del formato. Por eso vive en el `.clex` y no
+siendo `1` y el lenguaje no ve nada del formato. Por eso vive en el `.clex` y no
 en el `.cle`, y por eso el `.cle` exportado sale sin formatos.
 
 Por teclado: `Ctrl+B` negrita, `Ctrl+U` subrayado, `Ctrl+O` recorre la alineación.
@@ -119,7 +237,7 @@ más que dígitos, `.` `,` `-` y `+` (`looks_numeric`,
 
 - `123`, `12.500` y `-7` son números → a la derecha;
 - `total` es texto → a la izquierda;
-- `=A1 + A2` **no** es un número (el `=` no está en el conjunto) → a la izquierda,
+- `A1 + A2` **no** es un número (la `A` no es un dígito) → a la izquierda,
   que es lo que se quiere: una fórmula se ve como un fuente, no como un resultado.
 
 ## De los campos a las secuencias

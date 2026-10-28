@@ -4,6 +4,7 @@
 #include "clipboard.h"
 #include "complete.h"
 #include "hashmap.h"
+#include "popup.h"
 #include "tui.h"
 #include "cell.h"
 
@@ -90,31 +91,34 @@ typedef struct {
     // texto se escribe al final, y se fija con Enter o se deja con Escape.
     bool renaming;
     char renameText[SHEET_NAME_SIZE];
-    // Si la fila de las herramientas esta puesta. Es de la pantalla, y no de una
-    // hoja: quien trabaja a teclado la quita para todos los archivos, y quien
-    // trabaja a clic la deja.
-    bool showTools;
+    // Si la barra de las herramientas esta puesta, arriba de todo. Es de la
+    // pantalla, y no de una hoja: quien trabaja a teclado la quita para todos los
+    // archivos, y quien trabaja a clic la deja.
+    bool showMenu;
+    // La ventana flotante: el desplegable de una seccion, la lista de los temas
+    // o el campo de texto para guardar con otro nombre. Una sola a la vez.
+    Popup popup;
 } CellManager;
 
-// Las filas de abajo, de arriba a abajo: la rejilla, las herramientas si estan
-// puestas, las pestañas de las hojas y la barra de estado. La rejilla acaba donde
-// empieza lo demas.
+// Las filas: arriba la barra de las herramientas si esta puesta, y encima de la
+// rejilla sus letras; abajo, la rejilla acaba donde empieza lo demas: las
+// pestañas de las hojas y la barra de estado. Escondiendo la barra la rejilla
+// gana una fila.
 int grid_bottom(const CellManager *manager, int height);
-int tools_row(const CellManager *manager, int height);
+int menu_row(void);
 int sheet_row(int height);
 int status_row(int height);
 
 // Si una columna de la barra de estado es del nombre del archivo, que es el
-// tirador de la fila de las herramientas.
+// tirador de la barra de las herramientas.
 int status_path_at(int x);
 
-// En que columna de la fila de las pestanas empieza el chip que devuelve la fila
-// de las herramientas cuando esta quitada.
+// En que columna de la fila de las pestanas empieza el chip que devuelve la
+// barra cuando esta quitada.
 int tools_chip_column(int width);
 
-// La hoja que se esta viendo, y su estado. Todo lo que es de una hoja se mira
+// El estado de la hoja que se esta viendo. Todo lo que es de una hoja se mira
 // aqui: las celdas, el cursor, la vista y el historial.
-Sheet *current_sheet(CellManager *manager);
 SheetState *sheet_state(CellManager *manager);
 
 // La hoja numero index, o NULL si el numero no es de ninguna.
@@ -164,9 +168,6 @@ void print_status(CellManager *manager, const char *mode, const char *path);
 
 // La fila de las pestañas de las hojas.
 void print_sheets(CellManager *manager);
-
-// La fila de las herramientas, encima de las pestañas.
-void print_tools(CellManager *manager);
 
 // Donde cae un punto de la pantalla, para poder llevar un clic al sitio que le
 // corresponde. `sheet_at_column` devuelve la hoja de la columna de la fila de las
